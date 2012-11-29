@@ -1,0 +1,15 @@
+<package>
+  <description brief="dvo_core">
+
+     dvo_core
+
+  </description>
+  <author>Christian Kerl</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/dvo_core</url>
+  <depend package="roscpp"/>
+
+</package>
+
+
