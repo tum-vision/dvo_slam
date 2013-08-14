@@ -1,0 +1,43 @@
+<launch>
+  <arg name="dataset" default="$(env PWD)" />
+  <arg name="rgbdpair_file" default="$(arg dataset)/assoc.txt" />
+  <arg name="groundtruth_file" default="$(arg dataset)/groundtruth.txt" />
+
+  <arg name="launch_dir" value="$(find dvo_benchmark)/launch" />
+  <arg name="output_dir" value="$(find dvo_benchmark)/output" />
+  <arg name="config_file" default="$(arg launch_dir)/benchmark.yaml" />
+  <arg name="slam_config_file" default="$(arg launch_dir)/benchmark_backend.yaml" />
+  <arg name="keep_alive" default="false"/>
+  
+  <!-- if relative path the file will end up in ~/.ros/ -->
+  <arg name="trajectory_file" default="$(arg output_dir)/trajectory.txt" />
+  <arg name="video_folder" default="$(arg output_dir)/video" />
+  <arg name="camera_file" default="$(arg output_dir)/camera.txt" />
+  <arg name="debug" default="false" />
+  
+  <arg name="launch_prefix" value="xterm -e gdb --args" if="$(arg debug)" />
+  <arg name="launch_prefix" value="" unless="$(arg debug)" />
+  
+  <env name="ROSCONSOLE_CONFIG_FILE" value="$(arg launch_dir)/benchmark_logging.config" />
+  <env name="ROSCONSOLE_FORMAT"      value="${logger}: { ${message} }" />
+
+  <node launch-prefix="$(arg launch_prefix)" pkg="dvo_benchmark" type="benchmark" name="benchmark" output="screen">
+    <param type="string" name="rgbdpair_file" value="$(arg rgbdpair_file)" />
+    <param type="string" name="groundtruth_file" value="$(arg groundtruth_file)" />
+    
+    <param type="bool" name="estimate_trajectory" value="true" />
+    <param type="string" name="trajectory_file" value="$(arg trajectory_file)" />
+    
+    <param type="bool" name="show_estimate" value="true" />
+    <param type="bool" name="show_groundtruth" value="false" />
+    <param type="bool" name="keep_alive" value="$(arg keep_alive)" />
+    
+    <param type="bool" name="render_video" value="false" />
+    <param type="string" name="video_folder" value="$(arg video_folder)" />
+    
+    <param type="string" name="camera_file" value="$(arg camera_file)" />
+    
+    <rosparam command="load" file="$(arg config_file)" />
+    <rosparam command="load" file="$(arg slam_config_file)" />
+  </node>
+</launch>

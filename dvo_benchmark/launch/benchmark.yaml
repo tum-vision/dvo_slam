@@ -1,0 +1,15 @@
+coarsest_level: 3
+finest_level: 1
+max_iterations: 50
+precision: 0.0001
+use_initial_estimate: true
+use_weighting: true
+scale_estimator: 2
+scale_estimator_param: 5.0
+influence_function: 2
+influence_function_param: 5.0
+lambda: 0.0
+mu: 0.05
+min_intensity_deriv: 0.0
+min_depth_deriv: 0.00
+reconstruction: true

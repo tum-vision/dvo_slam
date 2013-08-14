@@ -1,0 +1,14 @@
+max_translational_distance: 0.2
+max_rotational_distance: 0
+min_entropy_ratio: 0.6
+min_eq_sys_constraint_ratio: 0.3
+constraint_search_radius: 0.75
+constraint_min_entropy_ratio_coarse: 0.02
+constraint_min_entropy_ratio_fine: 0.5
+constraint_min_eq_sys_constraint_ratio: 0.3
+graph_opt_iterations: 50
+graph_opt_min_distance: 0
+graph_opt_final: true
+graph_opt_final_iterations: 1000
+graph_opt_robust: true
+use_multithreading: true

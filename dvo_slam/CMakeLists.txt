@@ -16,43 +16,52 @@ set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
 #set the default path for built libraries to the "lib" directory
 set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 
-
-#common commands for building c++ executables and libraries
-#rosbuild_add_library(${PROJECT_NAME} src/example.cpp)
-#target_link_libraries(${PROJECT_NAME} another_library)
-#rosbuild_add_boost_directories()
-#rosbuild_link_boost(${PROJECT_NAME} thread)
-#rosbuild_add_executable(example examples/example.cpp)
-#target_link_libraries(example ${PROJECT_NAME})
-
-# Eigen3 library
-find_package(Eigen REQUIRED)
-include_directories(${Eigen_INCLUDE_DIRS})
-
 # dynamic reconfigure
 rosbuild_find_ros_package(dynamic_reconfigure)
 include(${dynamic_reconfigure_PACKAGE_PATH}/cmake/cfgbuild.cmake)
 gencfg()
 
+# messages
+rosbuild_genmsg()
+
+# VTK library
+find_package(VTK REQUIRED)
+include_directories(${VTK_INCLUDE_DIRS})
+
 rosbuild_add_library(${PROJECT_NAME} 
-    src/camera_base.cpp
-    src/camera_dense_tracking.cpp
-    
-    src/visualization/ros_camera_trajectory_visualizer.cpp
+  src/keyframe_tracker.cpp
+  src/keyframe_graph.cpp
+  src/keyframe_constraint_search.cpp
+  src/camera_keyframe_tracking.cpp
+  
+  src/config.cpp
+  
+  src/tracking_result.cpp
+  src/tracking_result_evaluation.cpp
+  src/local_map.cpp
+  src/local_tracker.cpp
+  
+  src/serialization/map_serializer_interface.cpp
+  src/serialization/map_serializer.cpp
+  
+  src/visualization/graph_visualizer.cpp
+  
+  src/types.cpp
 )
 
-rosbuild_add_library(camera_tracker_nodelet
-    src/camera_tracker_nodelet.cpp
+target_link_libraries(${PROJECT_NAME}
+  g2o_core
+  g2o_solver_dense
+  g2o_solver_csparse
+  g2o_csparse_extension
+  csparse
+  g2o_types_slam3d
 )
 
-target_link_libraries(camera_tracker_nodelet
-    ${PROJECT_NAME}
+rosbuild_add_executable(camera_keyframe_tracker
+  src/camera_keyframe_tracker_node.cpp
 )
 
-rosbuild_add_executable(camera_tracker
-     src/camera_tracker_node.cpp
-)
-
-target_link_libraries(camera_tracker
-    ${PROJECT_NAME}
+target_link_libraries(camera_keyframe_tracker
+  ${PROJECT_NAME}
 )

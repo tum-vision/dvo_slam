@@ -1,0 +1,15 @@
+<package>
+  <description brief="g2o">
+     ROS wrapper for g2o library
+  </description>
+
+  <license>BSD</license>
+  <url>https://github.com/RainerKuemmerle/g2o</url>
+  <review status="3rdparty" notes=""/>
+
+  <export>
+     <cpp cflags="-I${prefix}/include/ -I/usr/include/suitesparse/" lflags="-L${prefix}/lib -lcsparse" />
+  </export>
+</package>
+
+

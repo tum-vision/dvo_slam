@@ -1,0 +1,15 @@
+<package>
+  <description brief="sophus">
+     ROS wrapper for Sophus library by Hauke Strasdat
+  </description>
+
+  <license>MIT</license>
+  <url>https://github.com/strasdat/Sophus</url>
+  <review status="3rdparty" notes=""/>
+
+  <export>
+     <cpp cflags="-I${prefix}/include/" lflags="" />
+  </export>
+</package>
+
+

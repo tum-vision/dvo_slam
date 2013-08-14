@@ -1,38 +1,34 @@
 <package>
-  <description brief="dvo_ros">
+  <description brief="dvo_slam">
 
-     dvo_ros
+     dvo_slam
 
   </description>
   <author>Christian Kerl</author>
   <license>GPL</license>
   <review status="unreviewed" notes=""/>
-  <url>http://ros.org/wiki/dvo_ros</url>
+  <url>http://ros.org/wiki/dvo_slam</url>
   <depend package="roscpp"/>
-  <depend package="nodelet"/>
-  <depend package="tf"/>
-  <depend package="tf_conversions"/>
-  <depend package="eigen_conversions"/>
-  <depend package="dynamic_reconfigure" />
-  <depend package="pcl_ros"/>
-  
-  <depend package="dvo_core"/>
+  <depend package="g2o"/>
 
+  <depend package="dynamic_reconfigure" />
   <depend package="sensor_msgs"/>
   <depend package="image_transport"/>
   <depend package="message_filters"/>
   <depend package="cv_bridge"/>
   
+  <depend package="dvo_core"/>
+  <depend package="dvo_ros"/>
+
   <depend package="visualization_msgs"/>
   <depend package="interactive_markers"/>
   
-  <depend package="common_rosdeps" />
   <rosdep name="eigen" />
+  <rosdep name="tbb" />
   
   <export>
-      <nodelet plugin="${prefix}/nodelet_plugins.xml" />
       <cpp cflags="-I${prefix}/include -I${prefix}/cfg/cpp"
-        lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -ldvo_ros"/>
+        lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -ldvo_slam"/>
   </export>
 </package>
 

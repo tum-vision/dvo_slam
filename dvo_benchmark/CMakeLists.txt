@@ -28,3 +28,28 @@ set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 #rosbuild_link_boost(${PROJECT_NAME} thread)
 #rosbuild_add_executable(example examples/example.cpp)
 #target_link_libraries(example ${PROJECT_NAME})
+
+# Eigen3 library
+find_package(Eigen REQUIRED)
+include_directories(${Eigen_INCLUDE_DIRS})
+
+# VTK library
+find_package(VTK REQUIRED)
+include_directories(${VTK_INCLUDE_DIRS})
+link_directories(${VTK_LIBRARY_DIRS})
+
+rosbuild_add_executable(benchmark
+     src/benchmark_slam.cpp
+)
+
+#rosbuild_add_executable(experiment
+#     src/experiment.cpp
+#)
+
+target_link_libraries(benchmark
+  vtkCommon
+)
+
+# create output directory - just convenience for our users
+file(MAKE_DIRECTORY "${PROJECT_SOURCE_DIR}/output")
+file(MAKE_DIRECTORY "${PROJECT_SOURCE_DIR}/output/video")
