@@ -44,8 +44,7 @@ public:
     int FirstLevel, LastLevel;
     int MaxIterationsPerLevel;
     double Precision;
-    double Lambda; // weighting factor for temporal smoothing
-    double Mu;     // weighting factor for driving solution close to imu estimate
+    double Mu; // precision (1/sigma^2) of prior
 
     bool UseInitialEstimate;
     bool UseWeighting;
@@ -64,47 +63,9 @@ public:
     Config();
     size_t getNumLevels() const;
 
-    bool UseTemporalSmoothing() const;
-
     bool UseEstimateSmoothing() const;
 
     bool IsSane() const;
-  };
-
-  struct IterationContext
-  {
-    const Config& cfg;
-
-    int Level;
-    int Iteration;
-
-    size_t NumConstraints;
-    size_t MaxNumConstraints;
-
-    double Error, LastError;
-    Eigen::Vector2d Mean;
-    Eigen::Matrix2d Precision;
-
-    IterationContext(const Config& cfg);
-
-    // returns true if this is the first iteration
-    bool IsFirstIteration() const;
-
-    // returns true if this is the first iteration on the current level
-    bool IsFirstIterationOnLevel() const;
-
-    // returns true if this is the first level
-    bool IsFirstLevel() const;
-
-    // returns true if this is the last level
-    bool IsLastLevel() const;
-
-    bool IterationsExceeded() const;
-
-    // returns LastError - Error
-    double ErrorDiff() const;
-
-    double ConstraintRatio() const;
   };
 
   struct TerminationCriteria
@@ -155,6 +116,11 @@ public:
     dvo::core::AffineTransformd Transformation;
     dvo::core::Matrix6d Information;
     double LogLikelihood;
+
+    Stats Statistics;
+
+    bool isNaN() const;
+    void setIdentity();
   };
 
   static const Config& getDefaultConfig();
@@ -174,30 +140,52 @@ public:
   bool match(dvo::core::RgbdImagePyramid& reference, dvo::core::RgbdImagePyramid& current, dvo::core::AffineTransformd& transformation);
   bool match(dvo::core::PointSelection& reference, dvo::core::RgbdImagePyramid& current, dvo::core::AffineTransformd& transformation);
 
-  bool match(dvo::core::RgbdImagePyramid& reference, dvo::core::RgbdImagePyramid& current, dvo::DenseTracker::Result& result, dvo::DenseTracker::Stats& stats);
-  bool match(dvo::core::PointSelection& reference, dvo::core::RgbdImagePyramid& current, dvo::DenseTracker::Result& result, dvo::DenseTracker::Stats& stats);
-
-  // TODO: remove
-  void updateLastTransform(Eigen::Affine3d& last_transformation);
-
-  // TODO: remove
-  void getInformationEstimate(dvo::core::Matrix6d& information) const;
+  bool match(dvo::core::RgbdImagePyramid& reference, dvo::core::RgbdImagePyramid& current, dvo::DenseTracker::Result& result);
+  bool match(dvo::core::PointSelection& reference, dvo::core::RgbdImagePyramid& current, dvo::DenseTracker::Result& result);
 
   static inline void computeJacobianOfProjectionAndTransformation(const dvo::core::Vector4& p, dvo::core::Matrix2x6& jacobian);
 
   static inline void compute3rdRowOfJacobianOfTransformation(const dvo::core::Vector4& p, dvo::core::Vector6& j);
 
-  IterationContext itctx_;
   typedef std::vector<Eigen::Vector2f, Eigen::aligned_allocator<Eigen::Vector2f> > ResidualVectorType;
   typedef std::vector<float> WeightVectorType;
 private:
+  struct IterationContext
+  {
+    const Config& cfg;
+
+    int Level;
+    int Iteration;
+
+    double Error, LastError;
+
+    IterationContext(const Config& cfg);
+
+    // returns true if this is the first iteration
+    bool IsFirstIteration() const;
+
+    // returns true if this is the first iteration on the current level
+    bool IsFirstIterationOnLevel() const;
+
+    // returns true if this is the first level
+    bool IsFirstLevel() const;
+
+    // returns true if this is the last level
+    bool IsLastLevel() const;
+
+    bool IterationsExceeded() const;
+
+    // returns LastError - Error
+    double ErrorDiff() const;
+  };
+
   Config cfg;
+
+  IterationContext itctx_;
 
   dvo::core::WeightCalculation weight_calculation_;
   dvo::core::PointSelection reference_selection_;
   dvo::core::ValidPointAndGradientThresholdPredicate selection_predicate_;
-
-  dvo::core::Matrix6d last_a_;
 
   dvo::core::PointWithIntensityAndDepth::VectorType points, points_error;
 
@@ -215,7 +203,6 @@ std::ostream& operator<< (std::basic_ostream<CharT, Traits> &out, const dvo::Den
   << ", Last Level = " << config.LastLevel
   << ", Max Iterations per Level = " << config.MaxIterationsPerLevel
   << ", Precision = " << config.Precision
-  << ", Lambda = " << config.Lambda
   << ", Mu = " << config.Mu
   << ", Use Initial Estimate = " << (config.UseInitialEstimate ? "true" : "false")
   << ", Use Weighting = " << (config.UseWeighting ? "true" : "false")
@@ -225,20 +212,6 @@ std::ostream& operator<< (std::basic_ostream<CharT, Traits> &out, const dvo::Den
   << ", Influence Function Param = " << config.InfluenceFunctionParam
   << ", Intensity Derivative Threshold = " << config.IntensityDerivativeThreshold
   << ", Depth Derivative Threshold = " << config.DepthDerivativeThreshold
-  ;
-
-  return out;
-}
-
-template<typename CharT, typename Traits>
-std::basic_ostream<CharT, Traits>& operator<< (std::basic_ostream<CharT, Traits> &out, const dvo::DenseTracker::IterationContext &ctx)
-{
-  out
-  << "Level: " << ctx.Level
-  << ", Iteration: " << ctx.Iteration
-  << ", LastError: " << ctx.LastError
-  << ", Error: " << ctx.Error
-  << ", ErrorDiff: " << ctx.ErrorDiff()
   ;
 
   return out;

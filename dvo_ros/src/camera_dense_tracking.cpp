@@ -261,9 +261,7 @@ void CameraDenseTracker::handleImages(
     return;
   }
 
-  Eigen::Affine3d transform, last_transform;
-  last_transform.setIdentity();
-  tracker->updateLastTransform(last_transform);
+  Eigen::Affine3d transform;
 
   static stopwatch sw_match("match", 100);
   sw_match.start();

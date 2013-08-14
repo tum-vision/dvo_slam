@@ -101,21 +101,12 @@ void DenseTracker::configure(const Config& config)
   }
 }
 
-void DenseTracker::updateLastTransform(Eigen::Affine3d& last_transformation)
-{
-}
-
-void DenseTracker::getInformationEstimate(Eigen::Matrix<double, 6, 6>& information) const
-{
-  information = last_a_;
-}
-
 bool DenseTracker::match(RgbdImagePyramid& reference, RgbdImagePyramid& current, Eigen::Affine3d& transformation)
 {
-  Result result; Stats stats;
+  Result result;
   result.Transformation = transformation;
 
-  bool success = match(reference, current, result, stats);
+  bool success = match(reference, current, result);
 
   transformation = result.Transformation;
 
@@ -124,25 +115,25 @@ bool DenseTracker::match(RgbdImagePyramid& reference, RgbdImagePyramid& current,
 
 bool DenseTracker::match(dvo::core::PointSelection& reference, RgbdImagePyramid& current, Eigen::Affine3d& transformation)
 {
-  Result result; Stats stats;
+  Result result;
   result.Transformation = transformation;
 
-  bool success = match(reference, current, result, stats);
+  bool success = match(reference, current, result);
 
   transformation = result.Transformation;
 
   return success;
 }
 
-bool DenseTracker::match(dvo::core::RgbdImagePyramid& reference, dvo::core::RgbdImagePyramid& current, dvo::DenseTracker::Result& result, dvo::DenseTracker::Stats& stats)
+bool DenseTracker::match(dvo::core::RgbdImagePyramid& reference, dvo::core::RgbdImagePyramid& current, dvo::DenseTracker::Result& result)
 {
   reference.compute(cfg.getNumLevels());
   reference_selection_.setRgbdImagePyramid(reference);
 
-  return match(reference_selection_, current, result, stats);
+  return match(reference_selection_, current, result);
 }
 
-bool DenseTracker::match(dvo::core::PointSelection& reference, dvo::core::RgbdImagePyramid& current, dvo::DenseTracker::Result& result, dvo::DenseTracker::Stats& stats)
+bool DenseTracker::match(dvo::core::PointSelection& reference, dvo::core::RgbdImagePyramid& current, dvo::DenseTracker::Result& result)
 {
   current.compute(cfg.getNumLevels());
 
@@ -209,8 +200,8 @@ bool DenseTracker::match(dvo::core::PointSelection& reference, dvo::core::RgbdIm
 
   for(itctx_.Level = cfg.FirstLevel; itctx_.Level >= cfg.LastLevel; --itctx_.Level)
   {
-    stats.Levels.push_back(LevelStats());
-    LevelStats& level_stats = stats.Levels.back();
+    result.Statistics.Levels.push_back(LevelStats());
+    LevelStats& level_stats = result.Statistics.Levels.back();
 
     mean.setZero();
     precision.setZero();
@@ -241,8 +232,6 @@ bool DenseTracker::match(dvo::core::PointSelection& reference, dvo::core::RgbdIm
     level_stats.ValidPixels = last_point - first_point;
 
 //    sw_prep[itctx_.Level].stopAndPrint();
-
-    itctx_.MaxNumConstraints = (last_point - first_point);
 
     NormalEquationsLeastSquares ls;
     Matrix6d A;
@@ -294,9 +283,6 @@ bool DenseTracker::match(dvo::core::PointSelection& reference, dvo::core::RgbdIm
         }
 
         precision = dvo::core::computeScaleSse(compute_residuals_result.first_residual, compute_residuals_result.last_residual, weights.begin(), mean).inverse();
-
-        itctx_.Mean = mean.cast<double>();
-        itctx_.Precision = precision.cast<double>();
 
         float ll = computeCompleteDataLogLikelihood(compute_residuals_result.first_residual, compute_residuals_result.last_residual, weights.begin(), mean, precision);
 
@@ -437,8 +423,6 @@ bool DenseTracker::match(dvo::core::PointSelection& reference, dvo::core::RgbdIm
       iteration_stats.EstimateInformation = A;
 
       itctx_.Iteration++;
-      itctx_.NumConstraints = ls.num_constraints;
-      last_a_ = A * (/*ls.num_constraints */ 0.008 * 0.008);
 //      sw_it[itctx_.Level].stopAndPrint();
     }
     while(accept && x.lpNorm<Eigen::Infinity>() > cfg.Precision && !itctx_.IterationsExceeded());
@@ -455,8 +439,7 @@ bool DenseTracker::match(dvo::core::PointSelection& reference, dvo::core::RgbdIm
 //    sw_level[itctx_.Level].stopAndPrint();
   }
 
-
-  LevelStats& last_level = stats.Levels.back();
+  LevelStats& last_level = result.Statistics.Levels.back();
   IterationStats& last_iteration = last_level.TerminationCriterion != TerminationCriteria::LogLikelihoodDecreased ? last_level.Iterations[last_level.Iterations.size() - 1] : last_level.Iterations[last_level.Iterations.size() - 2];
 
   result.Transformation = estimate().inverse().matrix();

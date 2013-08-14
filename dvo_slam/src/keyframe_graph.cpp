@@ -110,9 +110,7 @@ public:
     next_keyframe_id_(1),
     next_odometry_vertex_id_(-1),
     next_odometry_edge_id_(-1),
-    //prefix_(""),
-    validation_tracker_(new dvo::DenseTracker()),
-    validation_tracker_pool_(boost::bind(&KeyframeGraphImpl::createValidationTrackerCopy, this))
+    validation_tracker_pool_(boost::bind(boost::make_shared<dvo::DenseTracker>))
   {
     // g2o setup
     keyframegraph_.setAlgorithm(
@@ -350,8 +348,7 @@ private:
       sw_constraint("constraint_search", 50),
       sw_validation("constraint_validation", 50),
       sw_insert("constraint_insert", 50),
-      sw_opt("constraint_optimization", 50),
-      sw_vis("constraint_vis", 50)
+      sw_opt("constraint_optimization", 50)
     ;
 
     KeyframeVector constraint_candidates;
@@ -388,7 +385,7 @@ private:
       keyframegraph_.initializeOptimization();
       keyframegraph_.optimize(cfg_.OptimizationIterations / 2);
 
-      removeOutlierConstraints(0.05, 5);
+      removeOutlierConstraints(0.1, 10);
 
       keyframegraph_.initializeOptimization();
       keyframegraph_.optimize(cfg_.OptimizationIterations / 2);
@@ -402,13 +399,14 @@ private:
     map_changed_(*me_);
   }
 
+  /*
   static void match(dvo::DenseTracker& t, const KeyframePtr& keyframe, const KeyframePtr& constraint, TrackingResult& r)
   {
-    t.match(*(keyframe->image()), *(constraint->image()), r.Pose);
+    t.match(*(keyframe->image()), *(constraint->image()), r.Tr);
     t.getInformationEstimate(r.Information);
     r.Context = &t.itctx_;
   }
-
+   */
   struct ValidateKeyframeConstraintReduction
   {
     const dvo_slam::KeyframeGraphConfig& config;
@@ -456,15 +454,15 @@ private:
         DenseTrackerPool::reference t = trackers.local();
         t->configure(simple_config);
 
-        r_identity.Pose.setIdentity();
-        match(*t, keyframe, constraint, r_identity);
-        constraint_ratio_identity = r_identity.Context->ConstraintRatio();
+        r_identity.Transformation.setIdentity();
+        t->match(*keyframe->image(), *constraint->image(), r_identity);
+        constraint_ratio_identity = double(r_identity.Statistics.Levels.back().Iterations.back().ValidConstraints) / double(r_identity.Statistics.Levels.back().ValidPixels);
         ratio_identity = std::min(keyframe->evaluation()->ratioWithAverage(r_identity), constraint->evaluation()->ratioWithAverage(r_identity)); //std::log(r_identity.Information.determinant()) / std::max(keyframe->avgDivergenceFromFim(), constraint->avgDivergenceFromFim());
         ratio_identity = std::isfinite(ratio_identity) ? ratio_identity : 0.0;
 
-        r_relative.Pose = constraint->pose().inverse() * keyframe->pose();
-        match(*t, keyframe, constraint, r_relative);
-        constraint_ratio_relative = r_relative.Context->ConstraintRatio();
+        r_relative.Transformation = constraint->pose().inverse() * keyframe->pose();
+        t->match(*keyframe->image(), *constraint->image(), r_relative);
+        constraint_ratio_relative = double(r_relative.Statistics.Levels.back().Iterations.back().ValidConstraints) / double(r_relative.Statistics.Levels.back().ValidPixels);
         ratio_relative = std::min(keyframe->evaluation()->ratioWithAverage(r_relative), constraint->evaluation()->ratioWithAverage(r_relative));//std::log(r_relative.Information.determinant()) / std::max(keyframe->avgDivergenceFromFim(), constraint->avgDivergenceFromFim());
         ratio_relative = std::isfinite(ratio_relative) ? ratio_relative : 0.0;
 
@@ -495,16 +493,16 @@ private:
           }
 
           t->configure(final_config);
-          r_final->Pose = r_final->Pose.inverse();
-          match(*t, keyframe, constraint, *r_final);
-          constraint_ratio_final = r_final->Context->ConstraintRatio();
+          r_final->Transformation = r_final->Transformation.inverse();
+          t->match(*keyframe->image(), *constraint->image(), *r_final);
+          constraint_ratio_final = double(r_final->Statistics.Levels.back().Iterations.back().ValidConstraints) / double(r_final->Statistics.Levels.back().ValidPixels);
 
           ratio_final = std::min(keyframe->evaluation()->ratioWithAverage(*r_final), constraint->evaluation()->ratioWithAverage(*r_final)); //std::log(r_final->Information.determinant()) / std::max(keyframe->avgDivergenceFromFim(), constraint->avgDivergenceFromFim());
           ratio_final = std::isfinite(ratio_final) ? ratio_final : 0.0;
 
           if(ratio_final > final_threshold && constraint_ratio_final > final_constraint_threshold)
           {
-            r_final->Context = 0;
+            r_final->Statistics.Levels.clear();
             proposals.push_back(std::make_pair(constraint, *r_final));
           }
         }
@@ -544,8 +542,7 @@ private:
       assert(!odometry_constraint);
 
       inserted++;
-      double err = 0.0;
-      insertOdometryConstraint(keyframe, constraint, it->second.Pose, err, it->second.Information);
+      insertConstraint(keyframe, constraint, it->second.Transformation, it->second.Information);
 
       max_distance = std::max(max_distance, distance);
     }
@@ -554,7 +551,7 @@ private:
     return max_distance;
   }
 
-  void insertOdometryConstraint(const KeyframePtr& keyframe, const KeyframePtr& constraint, const Eigen::Affine3d& relative, const double& err, const g2o::EdgeSE3::InformationType& information)
+  void insertConstraint(const KeyframePtr& keyframe, const KeyframePtr& constraint, const Eigen::Affine3d& relative, const g2o::EdgeSE3::InformationType& information)
   {
     int edge_id = combine(constraint->id(), keyframe->id());
 
@@ -627,8 +624,10 @@ private:
     }
   };
 
-  void addGraph(g2o::OptimizableGraph* g){
-    for (g2o::HyperGraph::VertexIDMap::iterator it=g->vertices().begin(); it!=g->vertices().end(); ++it){
+  void addGraph(g2o::OptimizableGraph* g)
+  {
+    for (g2o::HyperGraph::VertexIDMap::iterator it=g->vertices().begin(); it!=g->vertices().end(); ++it)
+    {
       g2o::OptimizableGraph::Vertex* v= (g2o::OptimizableGraph::Vertex*)(it->second);
       if (keyframegraph_.vertex(v->id()))
         continue;
@@ -643,7 +642,8 @@ private:
       v2->setHessianIndex(-1);
       keyframegraph_.addVertex(v2);
     }
-    for (g2o::HyperGraph::EdgeSet::iterator it=g->edges().begin(); it!=g->edges().end(); ++it){
+    for (g2o::HyperGraph::EdgeSet::iterator it=g->edges().begin(); it!=g->edges().end(); ++it)
+    {
       g2o::EdgeSE3* e = (g2o::EdgeSE3*)(*it);
       g2o::EdgeSE3* en = new g2o::EdgeSE3();
 
@@ -762,11 +762,6 @@ private:
     validation_tracker_cfg_.DepthDerivativeThreshold = cfg.DepthDerivativeThreshold;
   }
 
-  boost::shared_ptr<dvo::DenseTracker> createValidationTrackerCopy()
-  {
-    return boost::shared_ptr<dvo::DenseTracker>(new dvo::DenseTracker(*validation_tracker_));
-  }
-
   g2o::RobustKernel* createRobustKernel()
   {
     if(cfg_.UseRobustKernel)
@@ -793,7 +788,6 @@ private:
   int next_odometry_vertex_id_, next_odometry_edge_id_;
 
   g2o::SparseOptimizer keyframegraph_;
-  boost::shared_ptr<dvo::DenseTracker> validation_tracker_, constraint_tracker_;
   dvo::DenseTracker::Config validation_tracker_cfg_, constraint_tracker_cfg_;
 
   dvo_slam::KeyframeGraphConfig cfg_;

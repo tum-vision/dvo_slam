@@ -77,7 +77,6 @@ void updateConfigFromDynamicReconfigure(const dvo_ros::CameraDenseTrackerConfig&
   tracker_cfg.ScaleEstimatorParam = config.scale_estimator_param;
   tracker_cfg.InfluenceFuntionType = influence_function;
   tracker_cfg.InfluenceFunctionParam = config.influence_function_param;
-  tracker_cfg.Lambda = config.lambda;
   tracker_cfg.Mu = config.mu;
   tracker_cfg.IntensityDerivativeThreshold = config.min_intensity_deriv;
   tracker_cfg.DepthDerivativeThreshold = config.min_depth_deriv;
