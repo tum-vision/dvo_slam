@@ -87,7 +87,7 @@ public:
 
     //std::cerr << r_odometry.Information << std::endl;
 
-    last_transform_to_keyframe_ = r_odometry.Pose;
+    last_transform_to_keyframe_ = r_odometry.Transformation;
 
     evaluation.reset(new dvo_slam::LogLikelihoodTrackingResultEvaluation(r_odometry));
   }
@@ -102,8 +102,8 @@ public:
   bool onAcceptCriterionTrackingResultEvaluation(const LocalTracker& lt, const LocalTracker::TrackingResult& r_odometry, const LocalTracker::TrackingResult& r_keyframe)
   {
     std_msgs::Float64 m1, m2, m3;
-    m1.data = -r_odometry.Context->Error;
-    m2.data = -r_keyframe.Context->Error;
+    m1.data = -r_odometry.LogLikelihood;
+    m2.data = -r_keyframe.LogLikelihood;
     m3.data = evaluation->ratioWithFirst(r_keyframe);
 
     bool accept = m3.data > cfg_.MinEntropyRatio;
@@ -127,41 +127,41 @@ public:
     //md.data = diff.translation().norm();
     //md_pub_.publish(md);
 
-    bool reject1 = r_odometry.Pose.translation().norm() > 0.1 || r_keyframe.Pose.translation().norm() > 1.5 * cfg_.MaxTranslationalDistance;
+    bool reject1 = r_odometry.Transformation.translation().norm() > 0.1 || r_keyframe.Transformation.translation().norm() > 1.5 * cfg_.MaxTranslationalDistance;
 
 
 
     // TODO: awful hack
     if(reject1)
     {
-      std::cerr << "od before modify: "<< r_odometry.Pose.translation().norm() << std::endl;
-      Eigen::Affine3d& p = const_cast<Eigen::Affine3d&>(r_odometry.Pose);
+      std::cerr << "od before modify: "<< r_odometry.Transformation.translation().norm() << std::endl;
+      Eigen::Affine3d& p = const_cast<Eigen::Affine3d&>(r_odometry.Transformation);
       p.setIdentity();
-      std::cerr << "od after modify: "<< r_odometry.Pose.translation().norm() << std::endl;
+      std::cerr << "od after modify: "<< r_odometry.Transformation.translation().norm() << std::endl;
 
       dvo::core::Matrix6d& information = const_cast<dvo::core::Matrix6d&>(r_odometry.Information);
       information.setIdentity();
       information *= 0.008 * 0.008;
 
-      std::cerr << "kf before modify: "<< r_keyframe.Pose.translation().norm() << std::endl;
-      Eigen::Affine3d& p2 = const_cast<Eigen::Affine3d&>(r_keyframe.Pose);
+      std::cerr << "kf before modify: "<< r_keyframe.Transformation.translation().norm() << std::endl;
+      Eigen::Affine3d& p2 = const_cast<Eigen::Affine3d&>(r_keyframe.Transformation);
       p2 = last_transform_to_keyframe_;
-      std::cerr << "kf after modify: "<< r_keyframe.Pose.translation().norm() << std::endl;
+      std::cerr << "kf after modify: "<< r_keyframe.Transformation.translation().norm() << std::endl;
     }
 
-    last_transform_to_keyframe_ = r_keyframe.Pose;
+    last_transform_to_keyframe_ = r_keyframe.Transformation;
 
     return !reject1;
   }
 
   bool onAcceptCriterionDistance(const LocalTracker& lt, const LocalTracker::TrackingResult& r_odometry, const LocalTracker::TrackingResult& r_keyframe)
   {
-    return r_keyframe.Pose.translation().norm() < cfg_.MaxTranslationalDistance;
+    return r_keyframe.Transformation.translation().norm() < cfg_.MaxTranslationalDistance;
   }
 
   bool onAcceptCriterionConstraintRatio(const LocalTracker& lt, const LocalTracker::TrackingResult& r_odometry, const LocalTracker::TrackingResult& r_keyframe)
   {
-    return (double(r_keyframe.Context->NumConstraints) / double(r_keyframe.Context->MaxNumConstraints)) > cfg_.MinEquationSystemConstraintRatio;
+    return (double(r_keyframe.Statistics.Levels.back().Iterations.back().ValidConstraints) / double(r_keyframe.Statistics.Levels.back().ValidPixels)) > cfg_.MinEquationSystemConstraintRatio;
   }
 
   bool onAcceptCriterionConditionNumber(const LocalTracker& lt, const LocalTracker::TrackingResult& r_odometry, const LocalTracker::TrackingResult& r_keyframe)

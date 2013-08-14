@@ -28,7 +28,6 @@ DenseTracker::Config::Config() :
   LastLevel(1),
   MaxIterationsPerLevel(100),
   Precision(5e-7),
-  Lambda(0),
   UseInitialEstimate(false),
   UseWeighting(true),
   Mu(0),
@@ -44,11 +43,6 @@ DenseTracker::Config::Config() :
 size_t DenseTracker::Config::getNumLevels() const
 {
   return FirstLevel + 1;
-}
-
-bool DenseTracker::Config::UseTemporalSmoothing() const
-{
-  return Lambda > 1e-6;
 }
 
 bool DenseTracker::Config::UseEstimateSmoothing() const
@@ -98,9 +92,16 @@ bool DenseTracker::IterationContext::IterationsExceeded() const
   return Iteration >= max_iterations;
 }
 
-double DenseTracker::IterationContext::ConstraintRatio() const
+bool DenseTracker::Result::isNaN() const
 {
-  return double(NumConstraints) / double(MaxNumConstraints);
+  return !std::isfinite(Transformation.matrix().sum()) || !std::isfinite(Information.sum());
+}
+
+void DenseTracker::Result::setIdentity()
+{
+  Transformation.setIdentity();
+  Information.setIdentity();
+  LogLikelihood = 0.0;
 }
 
 } /* namespace dvo */

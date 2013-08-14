@@ -23,7 +23,7 @@
 
 #include <boost/shared_ptr.hpp>
 
-#include <dvo_slam/tracking_result.h>
+#include <dvo/dense_tracking.h>
 
 namespace dvo_slam
 {
@@ -36,16 +36,16 @@ public:
 
   virtual ~TrackingResultEvaluation() {};
 
-  virtual void add(const TrackingResult& r);
+  virtual void add(const dvo::DenseTracker::Result& r);
 
-  virtual double ratioWithFirst(const TrackingResult& r) const;
+  virtual double ratioWithFirst(const dvo::DenseTracker::Result& r) const;
 
-  virtual double ratioWithAverage(const TrackingResult& r) const;
+  virtual double ratioWithAverage(const dvo::DenseTracker::Result& r) const;
 
 protected:
   TrackingResultEvaluation(double first);
 
-  virtual double value(const TrackingResult& r) const = 0;
+  virtual double value(const dvo::DenseTracker::Result& r) const = 0;
 private:
   double first_, average_, n_;
 };
@@ -53,26 +53,26 @@ private:
 class LogLikelihoodTrackingResultEvaluation : public TrackingResultEvaluation
 {
 public:
-  LogLikelihoodTrackingResultEvaluation(const TrackingResult& r) : TrackingResultEvaluation(value(r)) {};
+  LogLikelihoodTrackingResultEvaluation(const dvo::DenseTracker::Result& r) : TrackingResultEvaluation(value(r)) {};
   virtual ~LogLikelihoodTrackingResultEvaluation() {};
-  virtual double value(const TrackingResult& r) const;
+  virtual double value(const dvo::DenseTracker::Result& r) const;
 };
 
 class NormalizedLogLikelihoodTrackingResultEvaluation : public TrackingResultEvaluation
 {
 public:
-  NormalizedLogLikelihoodTrackingResultEvaluation(const TrackingResult& r) : TrackingResultEvaluation(value(r)) {};
+  NormalizedLogLikelihoodTrackingResultEvaluation(const dvo::DenseTracker::Result& r) : TrackingResultEvaluation(value(r)) {};
   virtual ~NormalizedLogLikelihoodTrackingResultEvaluation() {};
-  virtual double value(const TrackingResult& r) const;
+  virtual double value(const dvo::DenseTracker::Result& r) const;
 };
 
 
 class EntropyRatioTrackingResultEvaluation : public TrackingResultEvaluation
 {
 public:
-  EntropyRatioTrackingResultEvaluation(const TrackingResult& r) : TrackingResultEvaluation(value(r)) {};
+  EntropyRatioTrackingResultEvaluation(const dvo::DenseTracker::Result& r) : TrackingResultEvaluation(value(r)) {};
   virtual ~EntropyRatioTrackingResultEvaluation() {};
-  virtual double value(const TrackingResult& r) const;
+  virtual double value(const dvo::DenseTracker::Result& r) const;
 };
 
 

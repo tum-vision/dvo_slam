@@ -23,18 +23,18 @@
 namespace dvo_slam
 {
 
-void TrackingResultEvaluation::add(const TrackingResult& r)
+void TrackingResultEvaluation::add(const dvo::DenseTracker::Result& r)
 {
   average_ += value(r);
   n_ += 1.0;
 }
 
-double TrackingResultEvaluation::ratioWithFirst(const TrackingResult& r) const
+double TrackingResultEvaluation::ratioWithFirst(const dvo::DenseTracker::Result& r) const
 {
   return value(r) / first_;
 }
 
-double TrackingResultEvaluation::ratioWithAverage(const TrackingResult& r) const
+double TrackingResultEvaluation::ratioWithAverage(const dvo::DenseTracker::Result& r) const
 {
   return value(r) / average_* n_;
 }
@@ -46,19 +46,19 @@ TrackingResultEvaluation::TrackingResultEvaluation(double first)
   n_ = 1.0;
 }
 
-double EntropyRatioTrackingResultEvaluation::value(const TrackingResult& r) const
+double EntropyRatioTrackingResultEvaluation::value(const dvo::DenseTracker::Result& r) const
 {
   return std::log(r.Information.determinant());
 }
 
-double LogLikelihoodTrackingResultEvaluation::value(const TrackingResult& r) const
+double LogLikelihoodTrackingResultEvaluation::value(const dvo::DenseTracker::Result& r) const
 {
-  return -r.Context->Error;
+  return -r.LogLikelihood;
 }
 
-double NormalizedLogLikelihoodTrackingResultEvaluation::value(const TrackingResult& r) const
+double NormalizedLogLikelihoodTrackingResultEvaluation::value(const dvo::DenseTracker::Result& r) const
 {
-  return -r.Context->Error / r.Context->NumConstraints;
+  return -r.LogLikelihood / r.Statistics.Levels.back().Iterations.back().ValidConstraints;
 }
 
 } /* namespace dvo_slam */

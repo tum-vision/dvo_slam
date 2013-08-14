@@ -36,7 +36,6 @@ rosbuild_add_library(${PROJECT_NAME}
   
   src/config.cpp
   
-  src/tracking_result.cpp
   src/tracking_result_evaluation.cpp
   src/local_map.cpp
   src/local_tracker.cpp

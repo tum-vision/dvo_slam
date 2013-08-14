@@ -25,7 +25,6 @@
 #include <dvo/dense_tracking.h>
 
 #include <dvo_slam/local_map.h>
-#include <dvo_slam/tracking_result.h>
 
 #include <boost/scoped_ptr.hpp>
 #include <boost/signals2.hpp>
@@ -41,7 +40,7 @@ namespace internal
 class LocalTracker
 {
 public:
-  typedef ::dvo_slam::TrackingResult TrackingResult;
+  typedef ::dvo::DenseTracker::Result TrackingResult;
 
   struct All
   {

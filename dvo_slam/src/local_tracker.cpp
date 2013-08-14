@@ -58,9 +58,7 @@ struct LocalTrackerImpl
 
   static void match(const DenseTrackerPtr& tracker, const PointSelectionPtr& ref, const dvo::core::RgbdImagePyramid::Ptr& cur, LocalTracker::TrackingResult* r)
   {
-    tracker->match(*ref, *cur, r->Pose);
-    tracker->getInformationEstimate(r->Information);
-    r->Context = new dvo::DenseTracker::IterationContext(tracker->itctx_);
+    tracker->match(*ref, *cur, *r);
   }
 };
 } /* namespace internal */
@@ -132,13 +130,10 @@ void LocalTracker::initNewLocalMap(const dvo::core::RgbdImagePyramid::Ptr& keyfr
   impl_->active_frame_points_->setRgbdImagePyramid(*frame);
 
   TrackingResult r_odometry;
-  r_odometry.Pose.setIdentity();
+  r_odometry.Transformation.setIdentity();
 
-  impl_->odometry_tracker_->match(*(impl_->keyframe_points_), *frame, r_odometry.Pose);
-  impl_->odometry_tracker_->getInformationEstimate(r_odometry.Information);
-  r_odometry.Context = new dvo::DenseTracker::IterationContext(impl_->odometry_tracker_->itctx_);
-
-  impl_->last_keyframe_pose_ = r_odometry.Pose;
+  impl_->odometry_tracker_->match(*(impl_->keyframe_points_), *frame, r_odometry);
+  impl_->last_keyframe_pose_ = r_odometry.Transformation;
 
   initNewLocalMap(keyframe, frame, r_odometry, keyframe_pose);
 }
@@ -154,7 +149,7 @@ void LocalTracker::initNewLocalMap(const dvo::core::RgbdImagePyramid::Ptr& keyfr
 
   local_map_ = LocalMap::create(keyframe, keyframe_pose);
   local_map_->addFrame(frame);
-  local_map_->addKeyframeMeasurement(r_odometry.Pose, r_odometry.Information);
+  local_map_->addKeyframeMeasurement(r_odometry.Transformation, r_odometry.Information);
 
   impl_->map_initialized_(*this, local_map_, r_odometry);
 }
@@ -175,15 +170,15 @@ void LocalTracker::update(const dvo::core::RgbdImagePyramid::Ptr& image, dvo::co
   sw_prepare.stopAndPrint();
 
   TrackingResult r_odometry, r_keyframe;
-  r_odometry.Pose.setIdentity();
-  r_keyframe.Pose = impl_->last_keyframe_pose_.inverse(Eigen::Isometry);
+  r_odometry.Transformation.setIdentity();
+  r_keyframe.Transformation = impl_->last_keyframe_pose_.inverse(Eigen::Isometry);
 
   // recycle, so we can reuse the allocated memory
   impl_->active_frame_points_->setRgbdImagePyramid(*local_map_->getCurrentFrame());
 
   // TODO: fix me!
   boost::function<void()> h1 = boost::bind(&internal::LocalTrackerImpl::match, impl_->keyframe_tracker_, impl_->keyframe_points_, image, &r_keyframe);
-  boost::function<void()> h2 = boost::bind(&internal::LocalTrackerImpl::match, impl_->odometry_tracker_, impl_->active_frame_points_, image, &r_odometry);
+  boost::function<void()> h2 = boost::bind(&internal::LocalTrackerImpl::match, impl_->odometry_tracker_, impl_->active_frame_points_, image,  &r_odometry);
 
   sw_match.start();
   tbb::parallel_invoke(h1, h2);
@@ -197,10 +192,10 @@ void LocalTracker::update(const dvo::core::RgbdImagePyramid::Ptr& image, dvo::co
   if(impl_->accept_(*this, r_odometry, r_keyframe) && !impl_->force_)
   {
     local_map_->addFrame(image);
-    local_map_->addOdometryMeasurement(r_odometry.Pose, r_odometry.Information);
-    local_map_->addKeyframeMeasurement(r_keyframe.Pose, r_keyframe.Information);
+    local_map_->addOdometryMeasurement(r_odometry.Transformation, r_odometry.Information);
+    local_map_->addKeyframeMeasurement(r_keyframe.Transformation, r_keyframe.Information);
 
-    impl_->last_keyframe_pose_ = r_keyframe.Pose;
+    impl_->last_keyframe_pose_ = r_keyframe.Transformation;
   }
   else
   {
@@ -211,9 +206,10 @@ void LocalTracker::update(const dvo::core::RgbdImagePyramid::Ptr& image, dvo::co
     dvo::core::AffineTransformd old_pose = old_map->getCurrentFramePose();
     impl_->map_complete_(*this, old_map);
 
+    // TODO: if we have a tracking failure in odometry and in keyframe this initialization makes no sense
     initNewLocalMap(old_map->getCurrentFrame(), image, r_odometry, old_pose);
 
-    impl_->last_keyframe_pose_ = r_odometry.Pose;
+    impl_->last_keyframe_pose_ = r_odometry.Transformation;
   }
 
   local_map_->getCurrentFramePose(pose);
