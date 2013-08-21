@@ -55,6 +55,7 @@ public:
   {
     if(visualizer_ != 0)
     {
+      visualizer_->setGraph(&graph_);
       graph_.addMapChangedCallback(boost::bind(&KeyframeTracker::Impl::onGlobalMapChangedUpdateVisualization, this, _1));
     }
 
@@ -167,15 +168,17 @@ public:
   bool onAcceptCriterionConditionNumber(const LocalTracker& lt, const LocalTracker::TrackingResult& r_odometry, const LocalTracker::TrackingResult& r_keyframe)
   {
     std_msgs::Float64 kappa_odometry, kappa_keyframe, de_odometry, de_keyframe;
-    Eigen::Matrix<double, 6, 1> eigenvalues;
+
     Eigen::SelfAdjointEigenSolver<dvo::core::Matrix6d> eigensolver1(r_odometry.Information);
-    eigenvalues = eigensolver1.eigenvalues();
+    dvo::core::Vector6d eigenvalues = eigensolver1.eigenvalues().real();
+    std::sort(eigenvalues.data(), eigenvalues.data() + eigenvalues.rows());
 
     kappa_odometry.data = std::abs(eigenvalues(5) / eigenvalues(0));
     //de_odometry.data = r_odometry.Context->Mean.sum();
 
     Eigen::SelfAdjointEigenSolver<dvo::core::Matrix6d> eigensolver2(r_keyframe.Information);
-    eigenvalues = eigensolver2.eigenvalues();
+    eigenvalues = eigensolver2.eigenvalues().real();
+    std::sort(eigenvalues.data(), eigenvalues.data() + eigenvalues.rows());
 
     kappa_keyframe.data = std::abs(eigenvalues(5) / eigenvalues(0));
     //de_keyframe.data = r_keyframe.Context->Mean.sum();
@@ -191,7 +194,7 @@ public:
 
   void onGlobalMapChangedUpdateVisualization(KeyframeGraph& map)
   {
-    visualizer_->visualize(map);
+    visualizer_->update();
   }
 
   void forceKeyframe()

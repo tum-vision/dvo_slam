@@ -66,6 +66,9 @@ public:
   const KeyframeVector& keyframes() const;
 
   const g2o::SparseOptimizer& graph() const;
+
+  cv::Mat computeIntensityErrorImage(int edge_id) const;
+
 private:
   internal::KeyframeGraphImplPtr impl_;
 };

@@ -34,18 +34,13 @@
 #include <dvo/util/stopwatch.h>
 #include <dvo/util/id_generator.h>
 #include <dvo/util/histogram.h>
-#include <dvo/visualization/visualizer.h>
+//#include <dvo/visualization/visualizer.h>
 
 namespace dvo
 {
 
 using namespace dvo::core;
 using namespace dvo::util;
-
-static inline bool isfinite(const float& v)
-{
-  return std::isfinite(v);
-}
 
 const DenseTracker::Config& DenseTracker::getDefaultConfig()
 {
@@ -224,7 +219,7 @@ bool DenseTracker::match(dvo::core::PointSelection& reference, dvo::core::RgbdIm
 
 
     PointSelection::PointIterator first_point, last_point;
-    reference.select(itctx_.Level, K, first_point, last_point);
+    reference.select(itctx_.Level, first_point, last_point);
     cur.buildAccelerationStructure();
 
     level_stats.Id = itctx_.Level;
@@ -448,6 +443,75 @@ bool DenseTracker::match(dvo::core::PointSelection& reference, dvo::core::RgbdIm
 
   return success;
 }
+
+cv::Mat DenseTracker::computeIntensityErrorImage(dvo::core::RgbdImagePyramid& reference, dvo::core::RgbdImagePyramid& current, const dvo::core::AffineTransformd& transformation, size_t level)
+{
+  reference.compute(level + 1);
+  current.compute(level + 1);
+  reference_selection_.setRgbdImagePyramid(reference);
+  reference_selection_.debug(true);
+
+  std::vector<uint8_t> valid_residuals;
+
+  if(points_error.size() < reference_selection_.getMaximumNumberOfPoints(level))
+    points_error.resize(reference_selection_.getMaximumNumberOfPoints(level));
+  if(residuals.size() < reference_selection_.getMaximumNumberOfPoints(level))
+    residuals.resize(reference_selection_.getMaximumNumberOfPoints(level));
+
+  valid_residuals.resize(reference_selection_.getMaximumNumberOfPoints(level));
+
+  PointSelection::PointIterator first_point, last_point;
+  reference_selection_.select(level, first_point, last_point);
+
+  RgbdImage& cur = current.level(level);
+  cur.buildAccelerationStructure();
+  const IntrinsicMatrix& K = cur.camera().intrinsics();
+
+  Vector8f wcur, wref;
+  // i z idx idy zdx zdy
+  float wcur_id = 0.5f, wref_id = 0.5f, wcur_zd = 1.0f, wref_zd = 0.0f;
+
+  wcur <<  1.0f / 255.0f,  1.0f, wcur_id * K.fx() / 255.0f, wcur_id * K.fy() / 255.0f, wcur_zd * K.fx(), wcur_zd * K.fy(), 0.0f, 0.0f;
+  wref << -1.0f / 255.0f, -1.0f, wref_id * K.fx() / 255.0f, wref_id * K.fy() / 255.0f, wref_zd * K.fx(), wref_zd * K.fy(), 0.0f, 0.0f;
+
+  ComputeResidualsResult compute_residuals_result;
+  compute_residuals_result.first_point_error = points_error.begin();
+  compute_residuals_result.first_residual = residuals.begin();
+  compute_residuals_result.first_valid_flag = valid_residuals.begin();
+
+  dvo::core::computeResidualsAndValidFlagsSse(first_point, last_point, cur, K, transformation.cast<float>(), wref, wcur, compute_residuals_result);
+
+  cv::Mat result = cv::Mat::zeros(reference.level(level).intensity.size(), CV_32FC1), debug_idx;
+
+  reference_selection_.getDebugIndex(level, debug_idx);
+
+  uint8_t *valid_pixel_it = debug_idx.ptr<uint8_t>();
+  ValidFlagIterator valid_residual_it = compute_residuals_result.first_valid_flag;
+  ResidualIterator residual_it = compute_residuals_result.first_residual;
+
+  float *result_it = result.ptr<float>();
+  float *result_end = result_it + result.total();
+
+  for(; result_it != result_end; ++result_it)
+  {
+    if(*valid_pixel_it == 1)
+    {
+      if(*valid_residual_it == 1)
+      {
+        *result_it = std::abs(residual_it->coeff(0));
+
+        ++residual_it;
+      }
+      ++valid_residual_it;
+    }
+    ++valid_pixel_it;
+  }
+
+  reference_selection_.debug(false);
+
+  return result;
+}
+
 
 // jacobian computation
 inline void DenseTracker::computeJacobianOfProjectionAndTransformation(const Vector4& p, Matrix2x6& j)

@@ -93,6 +93,10 @@ public:
 
     dvo::core::Vector6d EstimateIncrement;
     dvo::core::Matrix6d EstimateInformation;
+
+    void InformationEigenValues(dvo::core::Vector6d& eigenvalues) const;
+
+    double InformationConditionNumber() const;
   };
   typedef std::vector<IterationStats, Eigen::aligned_allocator<IterationStats> > IterationStatsVector;
 
@@ -101,6 +105,9 @@ public:
     size_t Id, MaxValidPixels, ValidPixels;
     TerminationCriteria::Enum TerminationCriterion;
     IterationStatsVector Iterations;
+
+    IterationStats& LastIterationWithIncrement();
+    IterationStats& LastIteration();
   };
   typedef std::vector<LevelStats> LevelStatsVector;
 
@@ -142,6 +149,9 @@ public:
 
   bool match(dvo::core::RgbdImagePyramid& reference, dvo::core::RgbdImagePyramid& current, dvo::DenseTracker::Result& result);
   bool match(dvo::core::PointSelection& reference, dvo::core::RgbdImagePyramid& current, dvo::DenseTracker::Result& result);
+
+  cv::Mat computeIntensityErrorImage(dvo::core::RgbdImagePyramid& reference, dvo::core::RgbdImagePyramid& current, const dvo::core::AffineTransformd& transformation, size_t level = 0);
+
 
   static inline void computeJacobianOfProjectionAndTransformation(const dvo::core::Vector4& p, dvo::core::Matrix2x6& jacobian);
 
@@ -215,6 +225,57 @@ std::ostream& operator<< (std::basic_ostream<CharT, Traits> &out, const dvo::Den
   ;
 
   return out;
+}
+
+template<typename CharT, typename Traits>
+std::ostream& operator<< (std::basic_ostream<CharT, Traits> &o, const dvo::DenseTracker::IterationStats &s)
+{
+  o << "Iteration: " << s.Id << " DataLogLikelihood: " << s.TDistributionLogLikelihood << " PriorLogLikelihood: " << s.PriorLogLikelihood << std::endl;
+
+  return o;
+}
+
+template<typename CharT, typename Traits>
+std::ostream& operator<< (std::basic_ostream<CharT, Traits> &o, const dvo::DenseTracker::LevelStats &s)
+{
+  std::string termination;
+
+  switch(s.TerminationCriterion)
+  {
+  case dvo::DenseTracker::TerminationCriteria::IterationsExceeded:
+    termination = "IterationsExceeded";
+    break;
+  case dvo::DenseTracker::TerminationCriteria::IncrementTooSmall:
+    termination = "IncrementTooSmall";
+    break;
+  case dvo::DenseTracker::TerminationCriteria::LogLikelihoodDecreased:
+    termination = "LogLikelihoodDecreased";
+    break;
+  default:
+    break;
+  }
+
+  o << "Level: " << s.Id << " Pixel: " << s.ValidPixels << "/" << s.MaxValidPixels << " Termination: " << termination << " Iterations: " << s.Iterations.size() << std::endl;
+
+  for(dvo::DenseTracker::IterationStatsVector::const_iterator it = s.Iterations.begin(); it != s.Iterations.end(); ++it)
+  {
+    o << *it;
+  }
+
+  return o;
+}
+
+template<typename CharT, typename Traits>
+std::ostream& operator<< (std::basic_ostream<CharT, Traits> &o, const dvo::DenseTracker::Stats &s)
+{
+  o << s.Levels.size() << " levels" << std::endl;
+
+  for(dvo::DenseTracker::LevelStatsVector::const_iterator it = s.Levels.begin(); it != s.Levels.end(); ++it)
+  {
+    o << *it;
+  }
+
+  return o;
 }
 
 #endif /* DENSE_TRACKER_H_ */

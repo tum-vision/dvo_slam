@@ -49,9 +49,15 @@ struct KeyframeGraphConfig
   double NewConstraintMinEntropyRatioFine;
   double MinEquationSystemConstraintRatio;
 
-  size_t MinConstraintDistance;
+  bool OptimizationRemoveOutliers;
+  double OptimizationOutlierWeightThreshold;
   size_t OptimizationIterations;
-  size_t OptimizationFinalIterations;
+
+  bool FinalOptimizationRemoveOutliers;
+  double FinalOptimizationOutlierWeightThreshold;
+  size_t FinalOptimizationIterations;
+
+  size_t MinConstraintDistance;
 
   KeyframeGraphConfig();
 };
@@ -85,7 +91,11 @@ std::basic_ostream<_CharT, _Traits>& operator<<(std::basic_ostream<_CharT, _Trai
     << "MinEquationSystemConstraintRatio: " << cfg.MinEquationSystemConstraintRatio << " "
     << "MinConstraintDistance: " << cfg.MinConstraintDistance << " "
     << "OptimizationIterations: " << cfg.OptimizationIterations << " "
-    << "OptimizationFinalIterations: " << cfg.OptimizationFinalIterations;
+    << "OptimizationRemoveOutliers: " << cfg.OptimizationRemoveOutliers << " "
+    << "OptimizationOutlierWeightThreshold: " << cfg.OptimizationOutlierWeightThreshold << " "
+    << "FinalOptimizationIterations: " << cfg.FinalOptimizationIterations << " "
+    << "FinalOptimizationRemoveOutliers: " << cfg.FinalOptimizationRemoveOutliers << " "
+    << "FinalOptimizationOutlierWeightThreshold: " << cfg.FinalOptimizationOutlierWeightThreshold;
 
   return out;
 }

@@ -19,6 +19,7 @@
  */
 
 #include <dvo/dense_tracking.h>
+#include <Eigen/Eigenvalues>
 
 namespace dvo
 {
@@ -102,6 +103,31 @@ void DenseTracker::Result::setIdentity()
   Transformation.setIdentity();
   Information.setIdentity();
   LogLikelihood = 0.0;
+}
+
+void DenseTracker::IterationStats::InformationEigenValues(dvo::core::Vector6d& eigenvalues) const
+{
+  Eigen::EigenSolver<dvo::core::Matrix6d> evd(EstimateInformation);
+  eigenvalues = evd.eigenvalues().real();
+  std::sort(eigenvalues.data(), eigenvalues.data() + eigenvalues.rows());
+}
+
+double DenseTracker::IterationStats::InformationConditionNumber() const
+{
+  dvo::core::Vector6d ev;
+  InformationEigenValues(ev);
+
+  return std::abs(ev(5) / ev(0));
+}
+
+DenseTracker::IterationStats& DenseTracker::LevelStats::LastIterationWithIncrement()
+{
+  return TerminationCriterion == DenseTracker::TerminationCriteria::LogLikelihoodDecreased ? Iterations[Iterations.size() - 2] : Iterations[Iterations.size() - 1];
+}
+
+DenseTracker::IterationStats& DenseTracker::LevelStats::LastIteration()
+{
+  return Iterations.back();
 }
 
 } /* namespace dvo */

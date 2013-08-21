@@ -20,6 +20,9 @@
 
 #include <dvo_ros/visualization/ros_camera_trajectory_visualizer.h>
 
+#include <image_transport/image_transport.h>
+#include <cv_bridge/cv_bridge.h>
+
 #include <dvo/visualization/async_point_cloud_builder.h>
 #include <dvo/visualization/point_cloud_aggregator.h>
 #include <pcl_ros/point_cloud.h>
@@ -45,8 +48,9 @@ using namespace dvo::visualization;
 class RosCameraVisualizer : public CameraVisualizer
 {
 public:
-  RosCameraVisualizer(std::string name, interactive_markers::InteractiveMarkerServer& marker_server, dvo::visualization::PointCloudAggregator& point_cloud_aggregator) :
+  RosCameraVisualizer(std::string name, interactive_markers::InteractiveMarkerServer& marker_server, image_transport::Publisher& image_topic, dvo::visualization::PointCloudAggregator& point_cloud_aggregator) :
     marker_server_(marker_server),
+    image_topic_(image_topic),
     point_cloud_aggregator_(point_cloud_aggregator),
     visibility_(ShowCameraAndCloud),
     user_override_(false)
@@ -100,6 +104,7 @@ public:
   }
 private:
   interactive_markers::InteractiveMarkerServer& marker_server_;
+  image_transport::Publisher& image_topic_;
   visualization_msgs::InteractiveMarker marker_;
   interactive_markers::InteractiveMarkerServer::FeedbackCallback marker_callback_;
 
@@ -113,6 +118,7 @@ private:
   {
     if(feedback->event_type == visualization_msgs::InteractiveMarkerFeedback::BUTTON_CLICK)
     {
+      /*
       user_override_ = true;
       switch(visibility_)
       {
@@ -127,6 +133,16 @@ private:
           break;
       }
       updateVisualization();
+       */
+
+      std_msgs::Header h;
+      h.stamp = ros::Time(point_cloud_builder_->image.timestamp);
+      h.frame_id = name_;
+
+      cv::Mat tmp;
+      point_cloud_builder_->image.intensity.convertTo(tmp, CV_8UC1);
+      cv_bridge::CvImage img(h, "mono8", tmp);
+      image_topic_.publish(img.toImageMsg());
     }
   }
 
@@ -161,7 +177,7 @@ private:
   {
     visualization_msgs::InteractiveMarkerControl control;
     control.always_visible = true;
-    control.interaction_mode = visualization_msgs::InteractiveMarkerControl::NONE;
+    control.interaction_mode = visualization_msgs::InteractiveMarkerControl::BUTTON;
 
     createCameraMarker(control);
 
@@ -302,7 +318,7 @@ private:
 
     m.points.push_back(p);
 
-    parent.markers.push_back(m);
+    //parent.markers.push_back(m);
     parent.markers.push_back(mbox);
   }
 
@@ -311,9 +327,9 @@ private:
     marker.controls[0].markers[0].color.r = color().r;
     marker.controls[0].markers[0].color.g = color().g;
     marker.controls[0].markers[0].color.b = color().b;
-    marker.controls[0].markers[1].color.r = color().r;
-    marker.controls[0].markers[1].color.g = color().g;
-    marker.controls[0].markers[1].color.b = color().b;
+    //marker.controls[0].markers[1].color.r = color().r;
+    //marker.controls[0].markers[1].color.g = color().g;
+    //marker.controls[0].markers[1].color.b = color().b;
   }
 };
 
@@ -356,7 +372,7 @@ private:
     visualization_msgs::Marker m;
     m.type = visualization_msgs::Marker::LINE_STRIP;
     m.color.a = 1.0f;
-    m.scale.x = 0.005;
+    m.scale.x = 0.02;
 
     visualization_msgs::InteractiveMarkerControl control;
     control.always_visible = true;
@@ -382,10 +398,12 @@ struct RosCameraTrajectoryVisualizerImpl
 
   RosCameraTrajectoryVisualizerImpl(ros::NodeHandle& nh) :
     nh_(nh),
-    marker_server_("dvo_vis")
+    it_(nh),
+    marker_server_(nh.getNamespace())
   {
-    point_cloud_topic_ = nh_.advertise<AsyncPointCloudBuilder::PointCloud>("dvo_vis/cloud", 1, true);
-    update_timer_ = nh_.createTimer(ros::Duration(0.03), &RosCameraTrajectoryVisualizerImpl::update, this, false, true);
+    image_topic_ = it_.advertise("image", 1, true);
+    point_cloud_topic_ = nh_.advertise<AsyncPointCloudBuilder::PointCloud>("cloud", 1, true);
+    update_timer_ = nh_.createTimer(ros::Duration(1.0), &RosCameraTrajectoryVisualizerImpl::update, this, false, true);
   }
 
   ~RosCameraTrajectoryVisualizerImpl()
@@ -399,7 +417,7 @@ struct RosCameraTrajectoryVisualizerImpl
     if(camera_visualizers_.end() == camera)
     {
       camera = camera_visualizers_.insert(
-          std::make_pair(name, CameraVisualizer::Ptr(new RosCameraVisualizer(name, marker_server_, point_cloud_aggregator_)))
+          std::make_pair(name, CameraVisualizer::Ptr(new RosCameraVisualizer(name, marker_server_, image_topic_, point_cloud_aggregator_)))
       ).first;
     }
 
@@ -433,6 +451,8 @@ struct RosCameraTrajectoryVisualizerImpl
   }
 private:
   ros::NodeHandle& nh_;
+  image_transport::ImageTransport it_;
+  image_transport::Publisher image_topic_;
   ros::Publisher point_cloud_topic_;
   ros::Timer update_timer_;
   interactive_markers::InteractiveMarkerServer marker_server_;

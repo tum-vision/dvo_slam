@@ -82,7 +82,7 @@ public:
 
   size_t getMaximumNumberOfPoints(const size_t& level);
 
-  void select(const size_t& level, const dvo::core::IntrinsicMatrix& intrinsics, PointIterator& first_point, PointIterator& last_point);
+  void select(const size_t& level, PointIterator& first_point, PointIterator& last_point);
 
   void recycle(dvo::core::RgbdImagePyramid& pyramid);
 

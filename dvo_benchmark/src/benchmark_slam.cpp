@@ -24,7 +24,6 @@
 #include <dvo/core/rgbd_image.h>
 #include <dvo/core/surface_pyramid.h>
 
-#include <dvo/visualization/visualizer.h>
 #include <dvo/visualization/camera_trajectory_visualizer.h>
 #include <dvo/visualization/pcl_camera_trajectory_visualizer.h>
 #include <dvo_ros/visualization/ros_camera_trajectory_visualizer.h>
@@ -126,7 +125,7 @@ public:
 
   void processInput(dvo::visualization::CameraTrajectoryVisualizerInterface* visualizer);
 private:
-  ros::NodeHandle& nh_, nh_private_;
+  ros::NodeHandle &nh_, nh_vis_, &nh_private_;
   Config cfg_;
 
   std::ostream *trajectory_out_;
@@ -148,6 +147,7 @@ bool BenchmarkNode::Config::VisualizationRequired()
 
 BenchmarkNode::BenchmarkNode(ros::NodeHandle& nh, ros::NodeHandle& nh_private) :
     nh_(nh),
+    nh_vis_(nh, "dvo_vis"),
     nh_private_(nh_private),
     trajectory_out_(0),
     groundtruth_reader_(0),
@@ -356,7 +356,7 @@ void BenchmarkNode::run()
 
   if(cfg_.VisualizationRequired())
   {
-    visualizer = new dvo_ros::visualization::RosCameraTrajectoryVisualizer(nh_);
+    visualizer = new dvo_ros::visualization::RosCameraTrajectoryVisualizer(nh_vis_);
     graph_visualizer = new dvo_slam::visualization::GraphVisualizer(*dynamic_cast<dvo_ros::visualization::RosCameraTrajectoryVisualizer*>(visualizer));
     //((dvo::visualization::PclCameraTrajectoryVisualizer*) visualizer)->bindSwitchToKey(pause_switch, "p");
     //((dvo::visualization::PclCameraTrajectoryVisualizer*) visualizer)->bindSwitchToKey(dump_camera_pose_, "s");
@@ -373,13 +373,6 @@ void BenchmarkNode::run()
   }
 
   dvo::util::IdGenerator frame_ids(cfg_.VideoFolder + std::string("/frame_"));
-
-  // configure debugging visualizer
-  dvo::visualization::Visualizer::instance()
-    .useExternalWaitKey(false)
-    .enabled(false)
-    .save(false)
-  ;
 
   // setup camera parameters
   // TODO: load from file
@@ -531,14 +524,7 @@ void BenchmarkNode::run()
   //std::cin >> tmp;
 
   sw_postprocess.start();
-  keyframe_tracker.finish();
   sw_postprocess.stop();
-
-  dvo_slam::serialization::FileSerializer<dvo_slam::serialization::TrajectorySerializer> serializer(optimized_trajectory_file);
-  keyframe_tracker.serializeMap(serializer);
-
-  dvo_slam::serialization::FileSerializer<dvo_slam::serialization::EdgeErrorSerializer> error_serializer(edge_error_file);
-  keyframe_tracker.serializeMap(error_serializer);
 
   sw_online.print();sw_postprocess.print();
 
@@ -547,6 +533,12 @@ void BenchmarkNode::run()
   {
     renderWhileSwitchAndNotTerminated(visualizer, dummy_switch);
   }
+
+  dvo_slam::serialization::FileSerializer<dvo_slam::serialization::TrajectorySerializer> serializer(optimized_trajectory_file);
+  keyframe_tracker.serializeMap(serializer);
+
+  dvo_slam::serialization::FileSerializer<dvo_slam::serialization::EdgeErrorSerializer> error_serializer(edge_error_file);
+  keyframe_tracker.serializeMap(error_serializer);
 }
 
 int main(int argc, char **argv)

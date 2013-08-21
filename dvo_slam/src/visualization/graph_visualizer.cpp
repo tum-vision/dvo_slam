@@ -19,8 +19,18 @@
  */
 
 #include <dvo_slam/visualization/graph_visualizer.h>
+#include <dvo_slam/GraphVisualizerConfig.h>
 
 #include <interactive_markers/interactive_marker_server.h>
+#include <interactive_markers/menu_handler.h>
+
+#include <visualization_msgs/InteractiveMarker.h>
+#include <visualization_msgs/InteractiveMarkerControl.h>
+
+#include <dynamic_reconfigure/server.h>
+
+#include <image_transport/image_transport.h>
+#include <cv_bridge/cv_bridge.h>
 
 #include <g2o/types/slam3d/vertex_se3.h>
 #include <g2o/types/slam3d/edge_se3.h>
@@ -33,33 +43,162 @@ namespace visualization
 namespace internal
 {
 
+struct CompareEdgeChi2
+{
+  bool operator() (g2o::OptimizableGraph::Edge* e1, g2o::OptimizableGraph::Edge* e2)
+  {
+    return e1->chi2() < e2->chi2();
+  }
+};
+
+struct FindEdgeById
+{
+public:
+  FindEdgeById(int id) : id_(id)
+  {
+
+  }
+
+  bool operator() (g2o::HyperGraph::Edge* e)
+  {
+    return e->id() == id_;
+  }
+private:
+  int id_;
+};
+
 class GraphVisualizerImpl
 {
 private:
+  ros::NodeHandle nh_, nh_graph_;
   dvo_ros::visualization::RosCameraTrajectoryVisualizer& visualizer_;
   interactive_markers::InteractiveMarkerServer* marker_server_;
+  interactive_markers::MenuHandler menu_handler_;
+  dynamic_reconfigure::Server<dvo_slam::GraphVisualizerConfig> reconfigure_server_;
+  cv::Mat loop_closure_colors_;
+
+  image_transport::ImageTransport it_;
+  image_transport::Publisher image_topic_;
+
+  dvo_slam::KeyframeGraph* graph_;
+
+  double visible_;
+  bool editable_;
+
+  std::string edge_id_prefix_;
+  std::set<std::string> editable_edges_;
 
 public:
+  friend class ::dvo_slam::visualization::GraphVisualizer;
+
   GraphVisualizerImpl(dvo_ros::visualization::RosCameraTrajectoryVisualizer& visualizer) :
+    nh_("dvo_vis"),
+    nh_graph_(nh_, "graph"),
     visualizer_(visualizer),
-    marker_server_(0)
+    marker_server_(0),
+    menu_handler_(),
+    reconfigure_server_(nh_graph_),
+    it_(nh_),
+    graph_(0),
+    edge_id_prefix_("edge_")
   {
     void* native_visualizer;
     if(visualizer_.native(native_visualizer))
     {
       marker_server_ = reinterpret_cast<interactive_markers::InteractiveMarkerServer *>(native_visualizer);
+      menu_handler_.insert("delete", boost::bind(&GraphVisualizerImpl::onEdgeDeleteClick, this, _1));
     }
+    image_topic_ = it_.advertise("image", 1, true);
+
+    allocateColors(10, 0.0f, 120.0f, loop_closure_colors_);
+
+    reconfigure_server_.setCallback(boost::bind(&GraphVisualizerImpl::onConfig, this, _1, _2));
   }
 
   ~GraphVisualizerImpl()
   {
   }
 
-  void visualize(const dvo_slam::KeyframeGraph& map)
+  void onConfig(dvo_slam::GraphVisualizerConfig& cfg, uint32_t level)
   {
-    if(marker_server_ == 0) return;
+    visible_ = cfg.visible;
+    editable_ = cfg.editable;
 
-    for(KeyframeVector::const_iterator it = map.keyframes().begin(); it != map.keyframes().end(); ++it)
+    update();
+
+    if(cfg.graph_opt_final)
+    {
+      cfg.graph_opt_final = false;
+
+      if(graph_ != 0)
+        graph_->finalOptimization();
+    }
+
+  }
+
+  void onEdgeClick(g2o::OptimizableGraph::Edge* e, const interactive_markers::InteractiveMarkerServer::FeedbackConstPtr& feedback)
+  {
+    if(feedback->event_type != visualization_msgs::InteractiveMarkerFeedback::BUTTON_CLICK || graph_->graph().edges().find(e) == graph_->graph().edges().end()) return;
+
+    cv::Mat error = graph_->computeIntensityErrorImage(e->id()), error_uc8;
+
+    if(error.total() > 0)
+    {
+      std_msgs::Header h;
+
+      error = cv::abs(error * 255.0f);
+      error.convertTo(error_uc8, CV_8UC1);
+      cv_bridge::CvImage img(h, "mono8", error_uc8);
+      image_topic_.publish(img.toImageMsg());
+    }
+  }
+
+  void onEdgeDeleteClick(const interactive_markers::MenuHandler::FeedbackConstPtr& feedback)
+  {
+    int edge_id;
+
+    std::istringstream iss(feedback->marker_name);
+    iss.ignore(edge_id_prefix_.size());
+    iss >> edge_id;
+
+    g2o::OptimizableGraph::EdgeSet::iterator edge_it = std::find_if(graph_->graph().edges().begin(), graph_->graph().edges().end(), FindEdgeById(edge_id));
+
+    if(edge_it == graph_->graph().edges().end()) return;
+
+    g2o::HyperGraph::Edge* edge = *edge_it;
+  }
+
+  geometry_msgs::Point toPoint(g2o::VertexSE3* v)
+  {
+    geometry_msgs::Point p;
+
+    p.x = v->estimate().translation()(0);
+    p.y = v->estimate().translation()(1);
+    p.z = v->estimate().translation()(2);
+
+    return p;
+  }
+
+  void allocateColors(size_t n, float min_hue, float max_hue, cv::Mat& rgb)
+  {
+    cv::Mat_<cv::Vec3f> hsv;
+    hsv.create(n, 1);
+    for(size_t idx = 0; idx < static_cast<size_t>(hsv.rows); ++idx)
+    {
+      cv::Vec3f& c = hsv.at<cv::Vec3f>(idx);
+      c.val[0] = (max_hue - min_hue) / float(hsv.rows) * float(idx);
+      c.val[1] = 1.0f;
+      c.val[2] = 1.0f;
+    }
+
+    cv::cvtColor(hsv, rgb, CV_HSV2RGB);
+  }
+
+  void update()
+  {
+    if(marker_server_ == 0 || graph_ == 0) return;
+
+    for(KeyframeVector::const_iterator it = graph_->keyframes().begin(); it != graph_->keyframes().end(); ++it)
     {
       const KeyframePtr& keyframe = *it;
 
@@ -72,65 +211,6 @@ public:
           .show(dvo::visualization::CameraVisualizer::ShowCameraAndCloud);
     }
 
-      /*
-      if(false && updated_system)
-      {
-        visualization_msgs::InteractiveMarkerControl control_cov;
-        control_cov.always_visible = true;
-
-        for(KeyframeVector::const_iterator it = keyframes_.begin(); it != keyframes_.end(); ++it)
-        {
-          const KeyframePtr& keyframe = *it;
-
-          std::stringstream id;
-          id << "keyframe_" << keyframe->id();
-
-          //marker_server->setCallback(id.str(), boost::bind(&KeyframeGraphImpl::onMarkerFeedback, this, _1, keyframe->id()));
-
-          g2o::VertexSE3 *kv = (g2o::VertexSE3*) keyframegraph_.vertex(keyframe->id());
-          assert(kv != 0);
-
-          if(kv->A().data() == 0) continue;
-
-          Eigen::Matrix3d cov = kv->A().inverse().block<3, 3>(3, 3);
-          Eigen::EigenSolver<Eigen::Matrix3d> es(cov);
-
-          if(es.info() == Eigen::Success)
-          {
-            Eigen::Quaterniond q(es.eigenvectors().real());
-
-            visualization_msgs::Marker m_cov;
-            m_cov.type = visualization_msgs::Marker::SPHERE;
-            m_cov.id = keyframe->id();
-            m_cov.color.a = 0.5f;
-            m_cov.color.r = 1.0f;
-            m_cov.color.g = 1.0f;
-            m_cov.color.b = 1.0f;
-            m_cov.scale.x = es.eigenvalues().real()(0) * 5e5;
-            m_cov.scale.y = es.eigenvalues().real()(1) * 5e5;
-            m_cov.scale.z = es.eigenvalues().real()(2) * 5e5;
-            m_cov.pose.position.x = kv->estimate().translation()(0);
-            m_cov.pose.position.y = kv->estimate().translation()(1);
-            m_cov.pose.position.z = kv->estimate().translation()(2);
-            m_cov.pose.orientation.x = q.x();
-            m_cov.pose.orientation.y = q.y();
-            m_cov.pose.orientation.z = q.z();
-            m_cov.pose.orientation.w = q.w();
-
-            control_cov.markers.push_back(m_cov);
-          }
-        }
-
-        visualization_msgs::InteractiveMarker marker_cov;
-
-        marker_cov.header.frame_id = "/world";
-        marker_cov.name = std::string("covariance");
-        marker_cov.controls.push_back(control_cov);
-
-        marker_server->insert(marker_cov);
-        marker_server->applyChanges();
-      }
-      */
       visualization_msgs::Marker m_odometry, m_loop;
       m_odometry.type = visualization_msgs::Marker::LINE_LIST;
       m_odometry.color.a = 1.0f;
@@ -148,31 +228,20 @@ public:
       std_msgs::ColorRGBA loop_color;
       loop_color.r = loop_color.g = loop_color.b = loop_color.a = 1.0;
 
-      float chi2_min = std::numeric_limits<float>::max(), chi2_max = std::numeric_limits<float>::min();
+      typedef std::vector<g2o::OptimizableGraph::Edge*> EdgeVector;
+      EdgeVector loop_closure_edges;
 
-      for(g2o::HyperGraph::EdgeSet::const_iterator it = map.graph().edges().begin(); it != map.graph().edges().end(); ++it)
+      for(g2o::HyperGraph::EdgeSet::const_iterator it = graph_->graph().edges().begin(); it !=  graph_->graph().edges().end(); ++it)
       {
         g2o::OptimizableGraph::Edge* edge = (g2o::OptimizableGraph::Edge*)(*it);
 
         // skip if just prior edge
         if(edge->vertices().size() < 2) continue;
 
-        std::stringstream id;
-        id << "edge_" << edge->id();
-
-        geometry_msgs::Point p1, p2;
         g2o::VertexSE3* v1 = (g2o::VertexSE3*)edge->vertex(0);
         g2o::VertexSE3* v2 = (g2o::VertexSE3*)edge->vertex(1);
 
         //if((v1->id() * v2->id()) < 0) continue;
-
-
-        p1.x = v1->estimate().translation()(0);
-        p1.y = v1->estimate().translation()(1);
-        p1.z = v1->estimate().translation()(2);
-        p2.x = v2->estimate().translation()(0);
-        p2.y = v2->estimate().translation()(1);
-        p2.z = v2->estimate().translation()(2);
 
         if(edge->vertices().size() == 2 && edge->level() == 0)
         {
@@ -180,57 +249,96 @@ public:
 
           if(dist == 1)
           {
-            //if(edge->vertex(0)->id() < 0 || edge->vertex(1)->id() < 0)
+            if(edge->vertex(0)->id() > 0 || edge->vertex(1)->id() > 0)
             {
-              m_odometry.points.push_back(p1);
-              m_odometry.points.push_back(p2);
+              m_odometry.points.push_back(toPoint(v1));
+              m_odometry.points.push_back(toPoint(v2));
             }
           }
           else
           {
-            m_loop.points.push_back(p1);
-            m_loop.points.push_back(p2);
-            edge->computeError();
-            float e(edge->chi2());
-
-            chi2_min = std::min(chi2_min, e);
-            chi2_max = std::max(chi2_max, e);
-
-            loop_color.a = e;
-
-            m_loop.colors.push_back(loop_color);
-            m_loop.colors.push_back(loop_color);
+            if(edge->vertex(0)->id() > 0 && edge->vertex(1)->id() > 0)
+            {
+              edge->computeError();
+              loop_closure_edges.push_back(edge);
+            }
           }
         }
       }
 
-      cv::Mat_<cv::Vec3f> hsv, rgb;
-      hsv.create(100, 1);
-      float min_h = 0.0f, max_h = 120.0f;
-      for(size_t idx = 0; idx < hsv.rows; ++idx)
+      std::set<std::string> previous_editable_edges = editable_edges_;
+      editable_edges_.clear();
+
+      if(!loop_closure_edges.empty())
       {
-        cv::Vec3f& c = hsv.at<cv::Vec3f>(idx);
-        c.val[0] = (max_h - min_h) / float(hsv.rows) * float(idx);
-        c.val[1] = 1.0f;
-        c.val[2] = 1.0f;
+
+        std::sort(loop_closure_edges.begin(), loop_closure_edges.end(), CompareEdgeChi2());
+
+        float chi2_min = loop_closure_edges.front()->chi2(), chi2_max = loop_closure_edges.back()->chi2();
+        float chi2_normalizer = chi2_max - chi2_min;
+
+        size_t offset = size_t((1 - visible_) * loop_closure_edges.size());
+
+        for(EdgeVector::iterator it = loop_closure_edges.begin() + offset; it != loop_closure_edges.end(); ++it)
+        {
+          int c_idx = std::min(std::max(loop_closure_colors_.rows - 1 - int(((*it)->chi2() - chi2_min) / chi2_normalizer * (loop_closure_colors_.rows - 1)), 0), loop_closure_colors_.rows - 1);
+
+          cv::Vec3f& c = loop_closure_colors_.at<cv::Vec3f>(c_idx);
+
+          //std::cerr << c_idx << " " << idx  << " " << m_loop.colors.size() << " "  << chi2_min  << " " << chi2_max  << " " << m_loop.colors[idx].a << std::endl;
+
+          std_msgs::ColorRGBA rgba;
+          rgba.r = c.val[0]; rgba.g = c.val[1]; rgba.b = c.val[2]; rgba.a = 1.0;
+
+          g2o::VertexSE3 *v0 = dynamic_cast<g2o::VertexSE3*>((*it)->vertex(0)), *v1 = dynamic_cast<g2o::VertexSE3*>((*it)->vertex(1));
+
+          m_loop.points.push_back(toPoint(v0));
+          m_loop.points.push_back(toPoint(v1));
+
+          m_loop.colors.push_back(rgba);
+          m_loop.colors.push_back(rgba);
+
+          if(editable_)
+          {
+            Eigen::Vector3d p = 0.5 * (v0->estimate().translation() + v1->estimate().translation());
+
+            visualization_msgs::Marker m_box;
+            m_box.type = visualization_msgs::Marker::CUBE;
+            m_box.color = rgba;
+            m_box.scale.x = 0.02f; m_box.scale.y = 0.02f; m_box.scale.z = 0.02f;
+
+            visualization_msgs::InteractiveMarkerControl m_control;
+            m_control.interaction_mode = visualization_msgs::InteractiveMarkerControl::BUTTON;
+            m_control.always_visible = true;
+            m_control.markers.push_back(m_box);
+
+            std::stringstream edge_id_builder;
+            edge_id_builder << edge_id_prefix_ << (*it)->id();
+            std::string edge_id = edge_id_builder.str();
+
+            visualization_msgs::InteractiveMarker m;
+            m.header.frame_id = "/world";
+            m.name = edge_id;
+            m.pose.position.x = p(0);
+            m.pose.position.y = p(1);
+            m.pose.position.z = p(2);
+            m.controls.push_back(m_control);
+
+            marker_server_->insert(m, boost::bind(&GraphVisualizerImpl::onEdgeClick, this, (*it), _1));
+            editable_edges_.insert(edge_id);
+            previous_editable_edges.erase(edge_id);
+          }
+        }
       }
 
-      cv::cvtColor(hsv, rgb, CV_HSV2RGB);
-
-      float chi2_normalizer = chi2_max - chi2_min;
-
-      for(size_t idx = 0; idx < m_loop.colors.size(); idx += 2)
+      for(std::set<std::string>::iterator it = previous_editable_edges.begin(); it != previous_editable_edges.end(); ++it)
       {
-        int c_idx = std::min(std::max(99 - int((m_loop.colors[idx].a - chi2_min) / chi2_normalizer * 99), 0), 99);
+        marker_server_->erase(*it);
+      }
 
-        cv::Vec3f& c = rgb.at<cv::Vec3f>(c_idx);
-
-        //std::cerr << c_idx << " " << idx  << " " << m_loop.colors.size() << " "  << chi2_min  << " " << chi2_max  << " " << m_loop.colors[idx].a << std::endl;
-
-        m_loop.colors[idx + 0].r = m_loop.colors[idx + 1].r = c.val[0];
-        m_loop.colors[idx + 0].g = m_loop.colors[idx + 1].g = c.val[1];
-        m_loop.colors[idx + 0].b = m_loop.colors[idx + 1].b = c.val[2];
-        m_loop.colors[idx + 0].a = m_loop.colors[idx + 1].a = 0.0;
+      for(std::set<std::string>::iterator it = editable_edges_.begin(); it != editable_edges_.end(); ++it)
+      {
+        menu_handler_.apply(*marker_server_, *it);
       }
 
       visualization_msgs::InteractiveMarkerControl control;
@@ -261,10 +369,14 @@ GraphVisualizer::~GraphVisualizer()
 {
 }
 
-
-void GraphVisualizer::visualize(const dvo_slam::KeyframeGraph& map)
+void GraphVisualizer::setGraph(dvo_slam::KeyframeGraph* graph)
 {
-  impl_->visualize(map);
+  impl_->graph_ = graph;
+}
+
+void GraphVisualizer::update()
+{
+  impl_->update();
 }
 
 } /* namespace visualization */

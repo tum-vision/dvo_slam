@@ -29,8 +29,6 @@
 #include <dvo/core/surface_pyramid.h>
 #include <dvo/dense_tracking.h>
 #include <dvo/util/stopwatch.h>
-#include <dvo/visualization/visualizer.h>
-//#include <dvo/visualization/pcl_camera_trajectory_visualizer.h>
 
 #include <dvo_slam/config.h>
 #include <dvo_slam/camera_keyframe_tracking.h>
@@ -72,12 +70,6 @@ CameraKeyframeTracker::CameraKeyframeTracker(ros::NodeHandle& nh, ros::NodeHandl
   slam_reconfigure_server_.setCallback(slam_reconfigure_server_callback);
 
   accumulated_transform.setIdentity();
-
-  dvo::visualization::Visualizer::instance()
-    .enabled(false)
-    .useExternalWaitKey(false)
-    .save(false)
-  ;
 }
 
 CameraKeyframeTracker::~CameraKeyframeTracker()

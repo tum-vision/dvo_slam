@@ -86,7 +86,7 @@ bool PointSelection::getDebugIndex(const size_t& level, cv::Mat& dbg_idx)
 }
 
 
-void PointSelection::select(const size_t& level, const dvo::core::IntrinsicMatrix& intrinsics, PointSelection::PointIterator& first_point, PointSelection::PointIterator& last_point)
+void PointSelection::select(const size_t& level, PointSelection::PointIterator& first_point, PointSelection::PointIterator& last_point)
 {
   assert(pyramid_ != 0);
 

@@ -41,7 +41,9 @@ public:
   GraphVisualizer(dvo_ros::visualization::RosCameraTrajectoryVisualizer& visualizer);
   virtual ~GraphVisualizer();
 
-  void visualize(const dvo_slam::KeyframeGraph& map);
+  void setGraph(dvo_slam::KeyframeGraph *graph);
+
+  void update();
 private:
   boost::scoped_ptr<internal::GraphVisualizerImpl> impl_;
 };

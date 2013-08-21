@@ -39,6 +39,8 @@
 #include <Eigen/Core>
 #include <Eigen/Eigenvalues>
 
+#include <sophus/se3.hpp>
+
 #include <g2o/core/sparse_optimizer.h>
 #include <g2o/solvers/dense/linear_solver_dense.h>
 #include <g2o/solvers/pcg/linear_solver_pcg.h>
@@ -64,6 +66,22 @@ namespace dvo_slam
 
 namespace internal
 {
+
+struct FindEdgeById
+{
+public:
+  FindEdgeById(int id) : id_(id)
+  {
+
+  }
+
+  bool operator() (g2o::HyperGraph::Edge* e)
+  {
+    return e->id() == id_;
+  }
+private:
+  int id_;
+};
 
 static Eigen::Isometry3d toIsometry(const Eigen::Affine3d& pose)
 {
@@ -241,13 +259,21 @@ public:
     }
 
     std::cerr << "optimizing..." << std::endl;
-    for(int idx = 0; idx < 10; ++idx)
+
+    keyframegraph_.setVerbose(true);
+
+    int removed = 0, iterations = -1;
+    for(int idx = 0; idx < 10 && (iterations != 0 || removed != 0); ++idx)
     {
-      keyframegraph_.setVerbose(true);
-      keyframegraph_.initializeOptimization();
-      keyframegraph_.optimize(cfg_.OptimizationFinalIterations / 10);
-      removeOutlierConstraints(0.1);
+      keyframegraph_.initializeOptimization(0);
+      iterations = keyframegraph_.optimize(cfg_.FinalOptimizationIterations / 10);
+
+      if(cfg_.FinalOptimizationRemoveOutliers)
+      {
+        removed = removeOutlierConstraints(cfg_.FinalOptimizationOutlierWeightThreshold);
+      }
     }
+
     std::cerr << "done" << std::endl;
 
     // update keyframe database
@@ -300,6 +326,46 @@ public:
     }
   }
 
+  cv::Mat computeIntensityErrorImage(int edge_id)
+  {
+    cv::Mat result;
+
+    g2o::OptimizableGraph::EdgeSet::iterator edge_it = std::find_if(keyframegraph_.edges().begin(), keyframegraph_.edges().end(), FindEdgeById(edge_id));
+
+    if(edge_it == keyframegraph_.edges().end()) return result;
+
+    g2o::EdgeSE3* e = dynamic_cast<g2o::EdgeSE3*>(*edge_it);
+
+    KeyframePtr& kf1 = keyframes_[(*edge_it)->vertex(0)->id() - 1];
+    KeyframePtr& kf2 = keyframes_[(*edge_it)->vertex(1)->id() - 1];
+    assert(kf1->id() == (*edge_it)->vertex(0)->id());
+    assert(kf2->id() == (*edge_it)->vertex(1)->id());
+
+    DenseTrackerPool::reference tracker = validation_tracker_pool_.local();
+    tracker->configure(validation_tracker_cfg_);
+    result = tracker->computeIntensityErrorImage(*kf2->image(), *kf1->image(), toAffine(e->measurement()));
+
+    std::map<int, LocalTracker::TrackingResult>::iterator r = constraint_tracking_results_.find(edge_id);
+
+    if(r != constraint_tracking_results_.end())
+    {
+      std::cerr << r->second.Statistics << std::endl;
+      std::cerr << "min_entropy_ratio_fine: " << std::min(kf1->evaluation()->ratioWithAverage(r->second), kf2->evaluation()->ratioWithAverage(r->second)) << std::endl;
+
+      Eigen::Vector3d rho;
+      if(e->robustKernel() != 0)
+       e->robustKernel()->robustify(e->chi2(), rho);
+      else
+       rho.setOnes();
+
+      std::cerr << "chi2: " << e->chi2() << " weight: " << rho(1) << std::endl;
+      std::cerr << "kappa fine: " << r->second.Statistics.Levels.back().LastIterationWithIncrement().InformationConditionNumber() << std::endl;
+      std::cerr << "kappa coarse: " << r->second.Statistics.Levels.front().LastIterationWithIncrement().InformationConditionNumber() << std::endl;
+    }
+
+
+    return result;
+  }
 private:
   typedef g2o::BlockSolver_6_3 BlockSolver;
   typedef g2o::LinearSolverCSparse<BlockSolver::PoseMatrixType> LinearSolver;
@@ -385,9 +451,16 @@ private:
       keyframegraph_.initializeOptimization();
       keyframegraph_.optimize(cfg_.OptimizationIterations / 2);
 
-      removeOutlierConstraints(0.1, 10);
+      if(cfg_.OptimizationRemoveOutliers)
+      {
+        int removed = removeOutlierConstraints(cfg_.OptimizationOutlierWeightThreshold);
 
-      keyframegraph_.initializeOptimization();
+        if(removed > 0)
+        {
+          keyframegraph_.initializeOptimization();
+        }
+      }
+
       keyframegraph_.optimize(cfg_.OptimizationIterations / 2);
 
       //// update keyframe database
@@ -399,14 +472,6 @@ private:
     map_changed_(*me_);
   }
 
-  /*
-  static void match(dvo::DenseTracker& t, const KeyframePtr& keyframe, const KeyframePtr& constraint, TrackingResult& r)
-  {
-    t.match(*(keyframe->image()), *(constraint->image()), r.Tr);
-    t.getInformationEstimate(r.Information);
-    r.Context = &t.itctx_;
-  }
-   */
   struct ValidateKeyframeConstraintReduction
   {
     const dvo_slam::KeyframeGraphConfig& config;
@@ -450,34 +515,58 @@ private:
         double simple_threshold = config.NewConstraintMinEntropyRatioCoarse, final_threshold = config.NewConstraintMinEntropyRatioFine, simple_constraint_threshold = config.MinEquationSystemConstraintRatio, final_constraint_threshold = config.MinEquationSystemConstraintRatio;
         double ratio_identity, ratio_relative, ratio_final, constraint_ratio_identity, constraint_ratio_relative, constraint_ratio_final;
 
-        LocalTracker::TrackingResult r_identity, r_relative, *r_final = 0;
+        LocalTracker::TrackingResult r_identity, r_identity2, r_relative, r_relative2, *r_final = 0;
         DenseTrackerPool::reference t = trackers.local();
         t->configure(simple_config);
 
         r_identity.Transformation.setIdentity();
+        r_identity2.Transformation.setIdentity();
+
         t->match(*keyframe->image(), *constraint->image(), r_identity);
+        t->match(*constraint->image(), *keyframe->image(), r_identity2);
+
         constraint_ratio_identity = double(r_identity.Statistics.Levels.back().Iterations.back().ValidConstraints) / double(r_identity.Statistics.Levels.back().ValidPixels);
-        ratio_identity = std::min(keyframe->evaluation()->ratioWithAverage(r_identity), constraint->evaluation()->ratioWithAverage(r_identity)); //std::log(r_identity.Information.determinant()) / std::max(keyframe->avgDivergenceFromFim(), constraint->avgDivergenceFromFim());
+        ratio_identity = std::min(keyframe->evaluation()->ratioWithAverage(r_identity), constraint->evaluation()->ratioWithAverage(r_identity2));
         ratio_identity = std::isfinite(ratio_identity) ? ratio_identity : 0.0;
 
+        Sophus::SE3d identity_diff((r_identity.Transformation * r_identity2.Transformation).matrix());
+
+        if(identity_diff.translation().lpNorm<2>() > 0.05)
+        {
+          ratio_identity = 0.0;
+        }
+        r_identity.Statistics.Levels.front().Iterations.front().TDistributionLogLikelihood = identity_diff.log().head<3>().lpNorm<2>();
+
         r_relative.Transformation = constraint->pose().inverse() * keyframe->pose();
+        r_relative2.Transformation = keyframe->pose().inverse() * constraint->pose();
+
         t->match(*keyframe->image(), *constraint->image(), r_relative);
+        t->match(*constraint->image(), *keyframe->image(), r_relative2);
+
         constraint_ratio_relative = double(r_relative.Statistics.Levels.back().Iterations.back().ValidConstraints) / double(r_relative.Statistics.Levels.back().ValidPixels);
-        ratio_relative = std::min(keyframe->evaluation()->ratioWithAverage(r_relative), constraint->evaluation()->ratioWithAverage(r_relative));//std::log(r_relative.Information.determinant()) / std::max(keyframe->avgDivergenceFromFim(), constraint->avgDivergenceFromFim());
+        ratio_relative = std::min(keyframe->evaluation()->ratioWithAverage(r_relative), constraint->evaluation()->ratioWithAverage(r_relative2));
         ratio_relative = std::isfinite(ratio_relative) ? ratio_relative : 0.0;
+
+        Sophus::SE3d relative_diff((r_relative.Transformation * r_relative2.Transformation).matrix());
+
+        if(relative_diff.translation().lpNorm<2>() > 0.05)
+        {
+          ratio_relative = 0.0;
+        }
+        r_relative.Statistics.Levels.front().Iterations.front().TDistributionLogLikelihood = relative_diff.log().head<3>().lpNorm<2>();
 
         if(ratio_identity > simple_threshold || ratio_relative > simple_threshold)
         {
           if(ratio_identity > ratio_relative)
           {
-            if(constraint_ratio_identity > simple_constraint_threshold)
+            if(constraint_ratio_identity > simple_constraint_threshold/* && r_identity.Statistics.Levels.back().LastIterationWithIncrement().InformationConditionNumber() < 250*/)
             {
               r_final = &r_identity;
             }
           }
           else
           {
-            if(constraint_ratio_relative > simple_constraint_threshold)
+            if(constraint_ratio_relative > simple_constraint_threshold/* && r_relative.Statistics.Levels.back().LastIterationWithIncrement().InformationConditionNumber() < 250*/)
             {
               r_final = &r_relative;
             }
@@ -502,7 +591,6 @@ private:
 
           if(ratio_final > final_threshold && constraint_ratio_final > final_constraint_threshold)
           {
-            r_final->Statistics.Levels.clear();
             proposals.push_back(std::make_pair(constraint, *r_final));
           }
         }
@@ -529,7 +617,7 @@ private:
   int insertNewKeyframeConstraints(const KeyframePtr& keyframe, const ConstraintVector& constraints)
   {
     int inserted = 0;
-    int max_distance = 0;
+    int max_distance = -1;
 
     for(ConstraintVector::const_iterator it = constraints.begin(); it != constraints.end(); ++it)
     {
@@ -542,7 +630,7 @@ private:
       assert(!odometry_constraint);
 
       inserted++;
-      insertConstraint(keyframe, constraint, it->second.Transformation, it->second.Information);
+      insertConstraint(keyframe, constraint, it->second);
 
       max_distance = std::max(max_distance, distance);
     }
@@ -551,23 +639,32 @@ private:
     return max_distance;
   }
 
-  void insertConstraint(const KeyframePtr& keyframe, const KeyframePtr& constraint, const Eigen::Affine3d& relative, const g2o::EdgeSE3::InformationType& information)
+  std::map<int, LocalTracker::TrackingResult> constraint_tracking_results_;
+
+  void insertConstraint(const KeyframePtr& keyframe, const KeyframePtr& constraint, const LocalTracker::TrackingResult& result)
   {
     int edge_id = combine(constraint->id(), keyframe->id());
 
     g2o::EdgeSE3* e = new g2o::EdgeSE3();
     e->setId(edge_id);
-    e->setMeasurement(toIsometry(relative));
+    e->setMeasurement(toIsometry(result.Transformation));
     e->setRobustKernel(createRobustKernel());
-    e->setInformation(information);
+    e->setInformation(result.Information);
     e->resize(2);
     e->setVertex(0, keyframegraph_.vertex(keyframe->id()));
     e->setVertex(1, keyframegraph_.vertex(constraint->id()));
 
+    constraint_tracking_results_[edge_id] = result;
+
     keyframegraph_.addEdge(e);
   }
 
-  void removeOutlierConstraints(double weight_threshold, int n_max = -1)
+  bool isOdometryConstraint(g2o::EdgeSE3* e)
+  {
+    return std::abs(e->vertex(0)->id() - e->vertex(1)->id());
+  }
+
+  int removeOutlierConstraints(double weight_threshold, int n_max = -1)
   {
     int n_removed = 0;
 
@@ -596,6 +693,8 @@ private:
 
     if(n_removed > 0)
       std::cerr << "removed: "  << n_removed << " edges" << std::endl;
+
+    return n_removed;
   }
 
   void updateKeyframePosesFromGraph()
@@ -840,6 +939,12 @@ void KeyframeGraph::finalOptimization()
 void KeyframeGraph::addMapChangedCallback(const KeyframeGraph::MapChangedCallback& callback)
 {
   impl_->map_changed_.connect(callback);
+}
+
+
+cv::Mat KeyframeGraph::computeIntensityErrorImage(int edge_id) const
+{
+  return impl_->computeIntensityErrorImage(edge_id);
 }
 
 const g2o::SparseOptimizer& KeyframeGraph::graph() const

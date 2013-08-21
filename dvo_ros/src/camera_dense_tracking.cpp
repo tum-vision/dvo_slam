@@ -26,7 +26,7 @@
 
 #include <dvo/core/surface_pyramid.h>
 #include <dvo/util/stopwatch.h>
-#include <dvo/visualization/visualizer.h>
+//#include <dvo/visualization/visualizer.h>
 //#include <dvo/visualization/pcl_camera_trajectory_visualizer.h>
 
 #include <dvo_ros/camera_dense_tracking.h>
@@ -67,11 +67,11 @@ CameraDenseTracker::CameraDenseTracker(ros::NodeHandle& nh, ros::NodeHandle& nh_
   latest_absolute_transform_.setIdentity();
   accumulated_transform.setIdentity();
 
-  dvo::visualization::Visualizer::instance()
-    .enabled(false)
-    .useExternalWaitKey(false)
-    .save(false)
-  ;
+  //dvo::visualization::Visualizer::instance()
+  //  .enabled(false)
+  //  .useExternalWaitKey(false)
+  //  .save(false)
+  //;
 }
 
 CameraDenseTracker::~CameraDenseTracker()

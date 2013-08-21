@@ -52,8 +52,6 @@ rosbuild_add_library(${PROJECT_NAME}
     
     src/util/histogram.cpp
     
-    
-    src/visualization/visualizer.cpp
     src/visualization/camera_trajectory_visualizer.cpp
     
     src/dense_tracking.cpp
