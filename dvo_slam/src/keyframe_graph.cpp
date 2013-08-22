@@ -899,6 +899,15 @@ private:
     {
       for(StageVector::iterator it = stages_.begin(); it != stages_.end(); ++it)
       {
+        // reset votes and tracking results
+        for(ConstraintProposalVector::iterator it = proposals.begin(); it != proposals.end(); ++it)
+        {
+          ConstraintProposalPtr& p = *it;
+
+          p->clearVotes();
+          p->TrackingResult.clearStatistics();
+        }
+
         validate(*it, proposals, debug);
 
         // do some logging
@@ -906,13 +915,11 @@ private:
         // remove rejected proposals
         std::remove_if(proposals.begin(), proposals.end(), boost::bind(&ConstraintProposal::Reject, _1));
 
-        // reset votes, tracking results and update initial transformations
+        // update initial transformations
         for(ConstraintProposalVector::iterator it = proposals.begin(); it != proposals.end(); ++it)
         {
           ConstraintProposalPtr& p = *it;
 
-          p->clearVotes();
-          p->TrackingResult.clearStatistics();
           p->InitialTransformation = p->TrackingResult.Transformation.inverse();
         }
       }
