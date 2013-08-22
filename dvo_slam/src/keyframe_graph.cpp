@@ -608,21 +608,6 @@ private:
     }
   };
 
-  template<class T>
-  T& dereference(T& t){
-    return t;
-  }
-
-  template<class T>
-  T& dereference(T*& t){
-    return *t;
-  }
-
-  template<class T>
-  T& dereference(boost::shared_ptr<T>& t){
-    return *t;
-  }
-
   struct ConstraintProposal
   {
     struct Vote
