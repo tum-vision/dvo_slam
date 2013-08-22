@@ -51,19 +51,5 @@ private:
   float max_distance_;
 };
 
-class DriftAwareNearestNeighborConstraintSearch : public KeyframeConstraintSearchInterface
-{
-public:
-  DriftAwareNearestNeighborConstraintSearch(float max_distance, float drift_per_second) :
-    max_distance_(max_distance),
-    drift_per_second_(drift_per_second)
-  {};
-  virtual ~DriftAwareNearestNeighborConstraintSearch() {};
-
-  virtual void findPossibleConstraints(const KeyframeVector& all, const KeyframePtr& keyframe, KeyframeVector& candidates);
-private:
-  float max_distance_, drift_per_second_;
-};
-
 } /* namespace dvo_slam */
 #endif /* KEYFRAME_CONSTRAINT_SEARCH_H_ */
