@@ -41,9 +41,11 @@ KeyframeGraphConfig::KeyframeGraphConfig() :
     NewConstraintMinEntropyRatioFine(0.9),
     MinEquationSystemConstraintRatio(0.2),
     MinConstraintDistance(0),
+    OptimizationUseDenseGraph(false),
     OptimizationIterations(20),
     OptimizationRemoveOutliers(false),
     OptimizationOutlierWeightThreshold(0.0),
+    FinalOptimizationUseDenseGraph(true),
     FinalOptimizationIterations(5000),
     FinalOptimizationRemoveOutliers(false),
     FinalOptimizationOutlierWeightThreshold(0.0)
@@ -60,11 +62,13 @@ void updateConfigFromDynamicReconfigure(const KeyframeSlamConfig& cfg, KeyframeT
 
   backend_cfg.MinConstraintDistance = cfg.graph_opt_min_distance;
   backend_cfg.OptimizationIterations = cfg.graph_opt_iterations;
+  backend_cfg.OptimizationUseDenseGraph = cfg.graph_opt_dense_graph;
   backend_cfg.OptimizationRemoveOutliers = cfg.graph_opt_remove_outliers;
   backend_cfg.OptimizationOutlierWeightThreshold = cfg.graph_opt_outlier_weight_threshold;
   backend_cfg.FinalOptimizationRemoveOutliers = cfg.graph_opt_final_remove_outliers;
   backend_cfg.FinalOptimizationOutlierWeightThreshold = cfg.graph_opt_final_outlier_weight_threshold;
   backend_cfg.FinalOptimizationIterations = cfg.graph_opt_final_iterations;
+  backend_cfg.FinalOptimizationUseDenseGraph = cfg.graph_opt_final_dense_graph;
   backend_cfg.NewConstraintSearchRadius = cfg.constraint_search_radius;
   backend_cfg.NewConstraintMinEntropyRatioCoarse = cfg.constraint_min_entropy_ratio_coarse;
   backend_cfg.NewConstraintMinEntropyRatioFine = cfg.constraint_min_entropy_ratio_fine;

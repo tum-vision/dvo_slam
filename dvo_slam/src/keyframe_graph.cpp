@@ -252,10 +252,13 @@ public:
     }
 
     // include all edges in the optimization
-    for(g2o::OptimizableGraph::EdgeSet::iterator e_it = keyframegraph_.edges().begin(); e_it != keyframegraph_.edges().end(); ++e_it)
+    if(cfg_.FinalOptimizationUseDenseGraph && !cfg_.OptimizationUseDenseGraph)
     {
-      g2o::EdgeSE3* e = (g2o::EdgeSE3*) (*e_it);
-      e->setLevel(0);
+      for(g2o::OptimizableGraph::EdgeSet::iterator e_it = keyframegraph_.edges().begin(); e_it != keyframegraph_.edges().end(); ++e_it)
+      {
+        g2o::EdgeSE3* e = (g2o::EdgeSE3*) (*e_it);
+        e->setLevel(0);
+      }
     }
 
     std::cerr << "optimizing..." << std::endl;
@@ -371,7 +374,9 @@ private:
   typedef g2o::LinearSolverCSparse<BlockSolver::PoseMatrixType> LinearSolver;
 
   typedef std::vector<std::pair<KeyframePtr, LocalTracker::TrackingResult> > ConstraintVector;
-  typedef tbb::enumerable_thread_specific<boost::shared_ptr<dvo::DenseTracker> > DenseTrackerPool;
+
+  typedef boost::shared_ptr<dvo::DenseTracker> DenseTrackerPtr;
+  typedef tbb::enumerable_thread_specific<DenseTrackerPtr> DenseTrackerPool;
 
   void execOptimization()
   {
@@ -603,6 +608,385 @@ private:
     }
   };
 
+  template<class T>
+  T& dereference(T& t){
+    return t;
+  }
+
+  template<class T>
+  T& dereference(T*& t){
+    return *t;
+  }
+
+  template<class T>
+  T& dereference(boost::shared_ptr<T>& t){
+    return *t;
+  }
+
+  struct ConstraintProposal
+  {
+    struct Vote
+    {
+      enum Enum
+      {
+        Accept,
+        Reject
+      };
+
+      // hard decision
+      Enum Decision;
+
+      // score to select better proposal
+      double Score;
+
+      // details for the decision
+      std::string Reason;
+
+      Vote() : Decision(Reject), Score(0.0) {}
+    };
+    typedef std::vector<Vote> VoteVector;
+
+    KeyframePtr Reference, Current;
+    Eigen::Affine3d InitialTransformation;
+    dvo::DenseTracker::Result TrackingResult;
+    VoteVector Votes;
+
+    ConstraintProposal() :
+      InitialTransformation(Eigen::Affine3d::Identity())
+    {
+    }
+
+    double TotalScore() const
+    {
+      double s = 0.0;
+
+      for(VoteVector::const_iterator it = Votes.begin(); it != Votes.end(); ++it)
+      {
+        s += it->Score;
+      }
+
+      return s;
+    }
+
+    bool Accept() const
+    {
+      for(VoteVector::const_iterator it = Votes.begin(); it != Votes.end(); ++it)
+        if(it->Decision == Vote::Reject) return false;
+
+      return true;
+    }
+
+    bool Reject() const
+    {
+      for(VoteVector::const_iterator it = Votes.begin(); it != Votes.end(); ++it)
+        if(it->Decision == Vote::Reject) return true;
+
+      return false;
+    }
+
+    void clearVotes()
+    {
+      Votes.clear();
+    }
+
+    boost::shared_ptr<ConstraintProposal> createInverseProposal() const
+    {
+      boost::shared_ptr<ConstraintProposal> inv = boost::make_shared<ConstraintProposal>();
+      inv->Reference = Current;
+      inv->Current = Reference;
+      inv->InitialTransformation = InitialTransformation.inverse();
+
+      return inv;
+    }
+  };
+
+  typedef boost::shared_ptr<ConstraintProposal> ConstraintProposalPtr;
+  typedef std::vector<ConstraintProposalPtr> ConstraintProposalVector;
+
+  struct ConstraintProposalVoter
+  {
+    virtual ~ConstraintProposalVoter();
+
+    /**
+     * These methods allow voters to get tracking results for additional proposals, which they might need for their
+     * decision.
+     */
+    virtual void createAdditionalProposals(ConstraintProposalVector& proposals) {}
+    virtual void removeAdditionalProposals(ConstraintProposalVector& proposals) {}
+
+    /**
+     * Vote for the proposal. Has to set the decision.
+     * If asked for reason provide detailed explanation of decision.
+     */
+    virtual ConstraintProposal::Vote vote(const ConstraintProposal& proposal, bool provide_reason) = 0;
+  };
+
+  typedef boost::shared_ptr<ConstraintProposalVoter> ConstraintProposalVoterPtr;
+  typedef std::vector<ConstraintProposalVoterPtr> ConstraintProposalVoterVector;
+
+  struct CrossValidationVoter : public ConstraintProposalVoter
+  {
+    double TranslationThreshold;
+
+    CrossValidationVoter(double threshold) : TranslationThreshold(threshold) {}
+    CrossValidationVoter(const CrossValidationVoter& other) : TranslationThreshold(other.TranslationThreshold) {}
+    virtual ~CrossValidationVoter() {}
+
+    virtual void createAdditionalProposals(ConstraintProposalVector& proposals)
+    {
+      // create cross validation proposals
+      size_t old_size = proposals.size();
+
+      for(size_t idx = 0; idx < old_size; ++idx)
+      {
+        ConstraintProposalPtr proposal = proposals[idx], other = proposal->createInverseProposal();
+
+        proposals.push_back(other);
+        pairs_.push_back(std::make_pair(proposal.get(), other.get()));
+      }
+    }
+
+    virtual void removeAdditionalProposals(ConstraintProposalVector& proposals)
+    {
+      for(ProposalPairVector::iterator it = pairs_.begin(); it != pairs_.end(); ++it)
+      {
+        ConstraintProposal *worse = it->first->TotalScore() >= it->second->TotalScore() ? it->second : it->first;
+
+        for(ConstraintProposalVector::iterator it = proposals.begin(); it != proposals.end(); ++it)
+        {
+          if(it->get() == worse)
+          {
+            proposals.erase(it);
+            break;
+          }
+        }
+      }
+
+      pairs_.clear();
+    }
+
+    virtual ConstraintProposal::Vote vote(const ConstraintProposal& proposal, bool provide_reason)
+    {
+      ConstraintProposal *inverse = findInverse(&proposal);
+
+      assert(inverse != 0);
+
+      Sophus::SE3d diff((inverse->TrackingResult.Transformation * proposal.TrackingResult.Transformation).matrix());
+      double diff_translation_norm = diff.translation().lpNorm<2>();
+
+      ConstraintProposal::Vote v;
+      v.Decision = diff_translation_norm <= TranslationThreshold ? ConstraintProposal::Vote::Accept : ConstraintProposal::Vote::Reject;
+
+      if(provide_reason)
+      {
+        std::stringstream reason;
+        reason  << "CrossValidation " << diff_translation_norm << " <= " << TranslationThreshold;
+
+        v.Reason = reason.str();
+      }
+
+      return v;
+    }
+  private:
+    typedef std::vector<std::pair<ConstraintProposal*, ConstraintProposal*> > ProposalPairVector;
+    ProposalPairVector pairs_;
+
+    ConstraintProposal* findInverse(const ConstraintProposal *proposal)
+    {
+      for(ProposalPairVector::iterator it = pairs_.begin(); it != pairs_.end(); ++it)
+      {
+        if(it->first == proposal) return it->second;
+        if(it->second == proposal) return it->first;
+      }
+
+      return static_cast<ConstraintProposal*>(0);
+    }
+  };
+
+  struct TrackingResultEvaluationVoter : public ConstraintProposalVoter
+  {
+    double RatioThreshold;
+
+    TrackingResultEvaluationVoter(double threshold) : RatioThreshold(threshold) {}
+    virtual ~TrackingResultEvaluationVoter() {}
+
+    virtual ConstraintProposal::Vote vote(const ConstraintProposal& proposal, bool provide_reason)
+    {
+      double ratio = proposal.Reference->evaluation()->ratioWithAverage(proposal.TrackingResult);
+
+      ConstraintProposal::Vote v;
+      v.Decision = ratio >= RatioThreshold ? ConstraintProposal::Vote::Accept : ConstraintProposal::Vote::Reject;
+      v.Score = ratio;
+
+      if(provide_reason)
+      {
+        std::stringstream reason;
+        reason  << "TrackingResultValidation " << ratio << " >= " << RatioThreshold;
+
+        v.Reason = reason.str();
+      }
+
+      return v;
+    }
+  };
+
+  struct ConstraintRatioVoter : public ConstraintProposalVoter
+  {
+    double RatioThreshold;
+
+    ConstraintRatioVoter(double threshold) : RatioThreshold(threshold) {}
+    virtual ~ConstraintRatioVoter() {}
+
+    virtual ConstraintProposal::Vote vote(const ConstraintProposal& proposal, bool provide_reason)
+    {
+      const dvo::DenseTracker::LevelStats &l = proposal.TrackingResult.Statistics.Levels.back();
+      const dvo::DenseTracker::IterationStats &it = l.LastIterationWithIncrement();
+      double ratio = double(it.ValidConstraints) / double(l.MaxValidPixels);
+
+      ConstraintProposal::Vote v;
+      v.Decision = ratio >= RatioThreshold ? ConstraintProposal::Vote::Accept : ConstraintProposal::Vote::Reject;
+
+      if(provide_reason)
+      {
+        std::stringstream reason;
+        reason  << "ConstraintRatio " << ratio << " >= " << RatioThreshold;
+
+        v.Reason = reason.str();
+      }
+
+      return v;
+    }
+  };
+
+  struct NaNResultVoter : public ConstraintProposalVoter
+  {
+    NaNResultVoter() {}
+    virtual ~NaNResultVoter() {}
+
+    virtual ConstraintProposal::Vote vote(const ConstraintProposal& proposal, bool provide_reason)
+    {
+      ConstraintProposal::Vote v;
+      v.Decision = proposal.TrackingResult.isNaN() ? ConstraintProposal::Vote::Accept : ConstraintProposal::Vote::Reject;
+
+      if(provide_reason)
+      {
+        std::stringstream reason;
+        reason  << "NaNResult " << proposal.TrackingResult.isNaN();
+
+        v.Reason = reason.str();
+      }
+
+      return v;
+    }
+  };
+
+  struct ConstraintProposalValidator
+  {
+  public:
+    struct Stage
+    {
+      int Id;
+      dvo::DenseTracker::Config TrackingConfig;
+      ConstraintProposalVoterVector Voters;
+
+      Stage& addVoter(ConstraintProposalVoter* v)
+      {
+        Voters.push_back(ConstraintProposalVoterPtr(v));
+        return *this;
+      }
+    };
+
+    typedef std::vector<Stage> StageVector;
+
+    ConstraintProposalValidator() {}
+
+    Stage& createStage(int id)
+    {
+      stages_.push_back(Stage());
+
+      Stage& s = stages_.back();
+      s.Id = id;
+
+      return s;
+    }
+
+    void validate(ConstraintProposalVector& proposals, bool debug = false)
+    {
+      for(StageVector::iterator it = stages_.begin(); it != stages_.end(); ++it)
+      {
+        validate(*it, proposals, debug);
+
+        // do some logging
+
+        // remove rejected proposals
+        std::remove_if(proposals.begin(), proposals.end(), boost::bind(&ConstraintProposal::Reject, _1));
+
+        // reset votes, tracking results and update initial transformations
+        for(ConstraintProposalVector::iterator it = proposals.begin(); it != proposals.end(); ++it)
+        {
+          ConstraintProposalPtr& p = *it;
+
+          p->clearVotes();
+          p->TrackingResult.clearStatistics();
+          p->InitialTransformation = p->TrackingResult.Transformation.inverse();
+        }
+      }
+    }
+
+  private:
+    StageVector stages_;
+    dvo::DenseTracker tracker_;
+
+    void validate(Stage& stage, ConstraintProposalVector& proposals, bool debug = false)
+    {
+      tracker_.configure(stage.TrackingConfig);
+
+      // create additional proposals
+      for(ConstraintProposalVoterVector::iterator it = stage.Voters.begin(); it != stage.Voters.end(); ++it)
+        (*it)->createAdditionalProposals(proposals);
+
+      // compute tracking result for all proposals
+      for(ConstraintProposalVector::iterator it = proposals.begin(); it != proposals.end(); ++it)
+      {
+        ConstraintProposalPtr& p = (*it);
+        tracker_.match(*p->Reference->image(), *p->Current->image(), p->TrackingResult);
+      }
+
+      // collect votes for all proposals
+      for(ConstraintProposalVector::iterator it = proposals.begin(); it != proposals.end(); ++it)
+      {
+        ConstraintProposal& p = *(*it);
+
+        for(ConstraintProposalVoterVector::iterator voter_it = stage.Voters.begin(); voter_it != stage.Voters.end(); ++it)
+          p.Votes.push_back((*voter_it)->vote(p, debug));
+      }
+
+      // remove additional proposals
+      for(ConstraintProposalVoterVector::iterator it = stage.Voters.begin(); it != stage.Voters.end(); ++it)
+        (*it)->removeAdditionalProposals(proposals);
+    }
+  };
+
+  ConstraintProposalValidator createConstraintProposalValidator()
+  {
+    ConstraintProposalValidator r;
+
+    ConstraintProposalValidator::Stage &s1 = r.createStage(1);
+    s1.TrackingConfig = validation_tracker_cfg_;
+    s1.addVoter(new ConstraintRatioVoter(cfg_.MinEquationSystemConstraintRatio));
+    s1.addVoter(new TrackingResultEvaluationVoter(cfg_.NewConstraintMinEntropyRatioCoarse));
+    s1.addVoter(new CrossValidationVoter(0.05));
+    s1.addVoter(new NaNResultVoter());
+
+    ConstraintProposalValidator::Stage &s2 = r.createStage(2);
+    s2.TrackingConfig = constraint_tracker_cfg_;
+    s2.addVoter(new ConstraintRatioVoter(cfg_.MinEquationSystemConstraintRatio));
+    s2.addVoter(new TrackingResultEvaluationVoter(cfg_.NewConstraintMinEntropyRatioCoarse));
+    s2.addVoter(new NaNResultVoter());
+
+    return r;
+  }
+
   void validateKeyframeConstraintsParallel(const KeyframeVector& constraint_candidates, const KeyframePtr& keyframe, ConstraintVector& constraints)
   {
     ValidateKeyframeConstraintReduction body(cfg_, validation_tracker_pool_, validation_tracker_cfg_, constraint_tracker_cfg_, keyframe);
@@ -792,7 +1176,7 @@ private:
     {
       g2o::EdgeSE3* e = (g2o::EdgeSE3*) (*e_it);
       e->setId(next_odometry_edge_id_--);
-      e->setLevel(2);
+      e->setLevel(cfg_.OptimizationUseDenseGraph ? 0 : 2);
     }
 
     addGraph(&g);

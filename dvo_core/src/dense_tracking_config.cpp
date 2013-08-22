@@ -105,6 +105,11 @@ void DenseTracker::Result::setIdentity()
   LogLikelihood = 0.0;
 }
 
+void DenseTracker::Result::clearStatistics()
+{
+  Statistics.Levels.clear();
+}
+
 void DenseTracker::IterationStats::InformationEigenValues(dvo::core::Vector6d& eigenvalues) const
 {
   Eigen::EigenSolver<dvo::core::Matrix6d> evd(EstimateInformation);

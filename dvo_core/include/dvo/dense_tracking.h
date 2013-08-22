@@ -108,6 +108,9 @@ public:
 
     IterationStats& LastIterationWithIncrement();
     IterationStats& LastIteration();
+
+    const IterationStats& LastIterationWithIncrement() const;
+    const IterationStats& LastIteration() const;
   };
   typedef std::vector<LevelStats> LevelStatsVector;
 
@@ -128,6 +131,7 @@ public:
 
     bool isNaN() const;
     void setIdentity();
+    void clearStatistics();
   };
 
   static const Config& getDefaultConfig();

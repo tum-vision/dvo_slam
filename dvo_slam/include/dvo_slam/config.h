@@ -49,10 +49,12 @@ struct KeyframeGraphConfig
   double NewConstraintMinEntropyRatioFine;
   double MinEquationSystemConstraintRatio;
 
+  bool OptimizationUseDenseGraph;
   bool OptimizationRemoveOutliers;
   double OptimizationOutlierWeightThreshold;
   size_t OptimizationIterations;
 
+  bool FinalOptimizationUseDenseGraph;
   bool FinalOptimizationRemoveOutliers;
   double FinalOptimizationOutlierWeightThreshold;
   size_t FinalOptimizationIterations;
@@ -90,9 +92,11 @@ std::basic_ostream<_CharT, _Traits>& operator<<(std::basic_ostream<_CharT, _Trai
     << "NewConstraintMinEntropyRatioFine: " << cfg.NewConstraintMinEntropyRatioFine << " "
     << "MinEquationSystemConstraintRatio: " << cfg.MinEquationSystemConstraintRatio << " "
     << "MinConstraintDistance: " << cfg.MinConstraintDistance << " "
+    << "OptimizationUseDenseGraph: " << cfg.OptimizationUseDenseGraph << " "
     << "OptimizationIterations: " << cfg.OptimizationIterations << " "
     << "OptimizationRemoveOutliers: " << cfg.OptimizationRemoveOutliers << " "
     << "OptimizationOutlierWeightThreshold: " << cfg.OptimizationOutlierWeightThreshold << " "
+    << "FinalOptimizationUseDenseGraph: " << cfg.FinalOptimizationUseDenseGraph << " "
     << "FinalOptimizationIterations: " << cfg.FinalOptimizationIterations << " "
     << "FinalOptimizationRemoveOutliers: " << cfg.FinalOptimizationRemoveOutliers << " "
     << "FinalOptimizationOutlierWeightThreshold: " << cfg.FinalOptimizationOutlierWeightThreshold;
