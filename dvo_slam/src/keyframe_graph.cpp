@@ -865,6 +865,31 @@ private:
     }
   };
 
+  struct OdometryConstraintVoter : public ConstraintProposalVoter
+  {
+    OdometryConstraintVoter() {}
+    virtual ~OdometryConstraintVoter() {}
+
+    virtual ConstraintProposal::Vote vote(const ConstraintProposal& proposal, bool provide_reason)
+    {
+      bool is_odometry_constraint = std::abs(proposal.Reference->id() - proposal.Current->id()) <= 1;
+
+      ConstraintProposal::Vote v;
+      v.Decision = is_odometry_constraint ? ConstraintProposal::Vote::Accept : ConstraintProposal::Vote::Reject;
+
+      if(provide_reason)
+      {
+        std::stringstream reason;
+        reason  << "OdometryConstraint " << is_odometry_constraint;
+
+        v.Reason = reason.str();
+      }
+
+      return v;
+    }
+  };
+
+
   struct ConstraintProposalValidator
   {
   public:
@@ -910,7 +935,7 @@ private:
 
         validate(*it, proposals, debug);
 
-        // do some logging
+        // TODO: do some logging
 
         // remove rejected proposals
         std::remove_if(proposals.begin(), proposals.end(), boost::bind(&ConstraintProposal::Reject, _1));
@@ -950,7 +975,12 @@ private:
         ConstraintProposal& p = *(*it);
 
         for(ConstraintProposalVoterVector::iterator voter_it = stage.Voters.begin(); voter_it != stage.Voters.end(); ++it)
+        {
           p.Votes.push_back((*voter_it)->vote(p, debug));
+
+          // early abort
+          if(p.Votes.back().Decision == ConstraintProposal::Vote::Reject && !debug) break;
+        }
       }
 
       // remove additional proposals
@@ -965,10 +995,11 @@ private:
 
     ConstraintProposalValidator::Stage &s1 = r.createStage(1);
     s1.TrackingConfig = validation_tracker_cfg_;
+    s1.addVoter(new OdometryConstraintVoter());
+    s1.addVoter(new NaNResultVoter());
     s1.addVoter(new ConstraintRatioVoter(cfg_.MinEquationSystemConstraintRatio));
     s1.addVoter(new TrackingResultEvaluationVoter(cfg_.NewConstraintMinEntropyRatioCoarse));
     s1.addVoter(new CrossValidationVoter(0.05));
-    s1.addVoter(new NaNResultVoter());
 
     ConstraintProposalValidator::Stage &s2 = r.createStage(2);
     s2.TrackingConfig = constraint_tracker_cfg_;
