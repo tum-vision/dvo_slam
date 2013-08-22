@@ -51,6 +51,8 @@ dvo::core::RgbdImagePyramidPtr load(dvo::core::RgbdCameraPyramid& camera, std::s
   rgb = cv::imread(rgb_file, 1);
   depth = cv::imread(depth_file, -1);
 
+  if(rgb.total() == 0 || depth.total() == 0) return dvo::core::RgbdImagePyramidPtr();
+
   if(rgb.type() != CV_32FC1)
   {
     if(rgb.type() == CV_8UC3)
@@ -78,6 +80,7 @@ dvo::core::RgbdImagePyramidPtr load(dvo::core::RgbdCameraPyramid& camera, std::s
   {
     depth_float = depth;
   }
+
 
   //depth_float.setTo(dvo::core::InvalidDepth, depth_float > 1.2f);
 
@@ -445,6 +448,8 @@ void BenchmarkNode::run()
   for(std::vector<dvo_benchmark::RgbdPair>::iterator it = pairs.begin(); ros::ok() && it != pairs.end(); ++it)
   {
     current = load(camera, folder + it->RgbFile(), folder + it->DepthFile());
+
+    if(!current) continue;
 
     // pause in the beginning
     renderWhileSwitchAndNotTerminated(visualizer, pause_switch);
