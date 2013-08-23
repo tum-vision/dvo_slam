@@ -94,6 +94,7 @@ void CameraKeyframeTracker::reset(const sensor_msgs::CameraInfo::ConstPtr& camer
   keyframe_tracker->configureTracking(tracker_cfg);
   keyframe_tracker->configureKeyframeSelection(keyframe_tracker_cfg);
   keyframe_tracker->configureMapping(graph_cfg);
+  keyframe_tracker->addMapChangedCallback(boost::bind(&CameraKeyframeTracker::onMapChanged, this, _1));
 
   static RgbdImagePyramid* const __null__ = 0;
 
@@ -172,17 +173,20 @@ void CameraKeyframeTracker::handleSlamConfig(dvo_slam::KeyframeSlamConfig& confi
     {
       config.graph_opt_final = false;
       keyframe_tracker->finish();
-
-      dvo_slam::PoseStampedArray msg;
-      dvo_slam::serialization::MessageSerializer serializer(msg);
-
-      keyframe_tracker->serializeMap(serializer);
-
-      graph_publisher.publish(msg);
     }
   }
 
   //ROS_INFO_STREAM("reconfigured SLAM system, frontend config ( " << keyframe_tracker_cfg << " ), backend config  ( " << graph_cfg << " )");
+}
+
+
+void CameraKeyframeTracker::onMapChanged(dvo_slam::KeyframeGraph& map)
+{
+  dvo_slam::PoseStampedArray msg;
+  dvo_slam::serialization::MessageSerializer serializer(msg);
+  serializer.serialize(map);
+
+  graph_publisher.publish(msg);
 }
 
 void CameraKeyframeTracker::handleImages(

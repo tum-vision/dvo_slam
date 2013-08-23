@@ -88,6 +88,8 @@ private:
   void reset(const sensor_msgs::CameraInfo::ConstPtr& camera_info_msg);
 
   void publishTransform(const std_msgs::Header& header, const Eigen::Affine3d& transform, const std::string frame);
+
+  void onMapChanged(dvo_slam::KeyframeGraph& map);
 public:
   CameraKeyframeTracker(ros::NodeHandle& nh, ros::NodeHandle& nh_private);
   virtual ~CameraKeyframeTracker();

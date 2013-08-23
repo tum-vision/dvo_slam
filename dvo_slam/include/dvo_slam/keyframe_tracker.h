@@ -57,6 +57,8 @@ public:
 
   void finish();
 
+  void addMapChangedCallback(const dvo_slam::KeyframeGraph::MapChangedCallback& callback);
+
   void serializeMap(dvo_slam::serialization::MapSerializerInterface& serializer);
 private:
   class Impl;

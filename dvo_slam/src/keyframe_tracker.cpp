@@ -59,6 +59,8 @@ public:
       graph_.addMapChangedCallback(boost::bind(&KeyframeTracker::Impl::onGlobalMapChangedUpdateVisualization, this, _1));
     }
 
+    //graph_.addMapChangedCallback(boost::bind(&KeyframeTracker::Impl::onGlobalMapChangedSaveTrajectory, this, _1));
+
     lt_.addMapInitializedCallback(boost::bind(&KeyframeTracker::Impl::onMapInitialized, this, _1, _2, _3));
     lt_.addMapCompleteCallback(boost::bind(&KeyframeTracker::Impl::onMapComplete, this, _1, _2));
     lt_.addAcceptCallback(boost::bind(&KeyframeTracker::Impl::onAcceptCriterionTrackingResultEvaluation, this, _1, _2, _3));
@@ -197,6 +199,20 @@ public:
     visualizer_->update();
   }
 
+
+  void onGlobalMapChangedSaveTrajectory(KeyframeGraph& map)
+  {
+    static int idx = 1;
+
+    std::stringstream ss;
+    ss << "assoc_opt_traj" << idx << ".txt";
+
+    dvo_slam::serialization::FileSerializer<dvo_slam::serialization::TrajectorySerializer> serializer(ss.str());
+    serializer.serialize(map);
+
+    ++idx;
+  }
+
   void forceKeyframe()
   {
     lt_.forceCompleteCurrentLocalMap();
@@ -302,6 +318,11 @@ void KeyframeTracker::forceKeyframe()
 void KeyframeTracker::finish()
 {
   impl_->finish();
+}
+
+void KeyframeTracker::addMapChangedCallback(const dvo_slam::KeyframeGraph::MapChangedCallback& callback)
+{
+  impl_->graph_.addMapChangedCallback(callback);
 }
 
 void KeyframeTracker::serializeMap(dvo_slam::serialization::MapSerializerInterface& serializer)
