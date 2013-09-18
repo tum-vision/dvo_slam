@@ -244,7 +244,7 @@ class RgbdImagePyramid
 public:
   typedef boost::shared_ptr<dvo::core::RgbdImagePyramid> Ptr;
 
-  RgbdImagePyramid(const RgbdCameraPyramid& camera, const cv::Mat& intensity, const cv::Mat& depth);
+  RgbdImagePyramid(RgbdCameraPyramid& camera, const cv::Mat& intensity, const cv::Mat& depth);
 
   virtual ~RgbdImagePyramid();
 
@@ -257,7 +257,7 @@ public:
 
   double timestamp() const;
 private:
-  const RgbdCameraPyramid& camera_;
+  RgbdCameraPyramid& camera_;
   std::vector<RgbdImagePtr> levels_;
 };
 

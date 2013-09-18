@@ -138,7 +138,7 @@ static void pyrDownSubsample(const cv::Mat& in, cv::Mat& out)
   }
 }
 
-RgbdImagePyramid::RgbdImagePyramid(const RgbdCameraPyramid& camera, const cv::Mat& intensity, const cv::Mat& depth) :
+RgbdImagePyramid::RgbdImagePyramid(RgbdCameraPyramid& camera, const cv::Mat& intensity, const cv::Mat& depth) :
     camera_(camera)
 {
   levels_.push_back(camera_.level(0).create(intensity, depth));
@@ -277,7 +277,7 @@ RgbdCameraPyramid::~RgbdCameraPyramid()
 
 RgbdImagePyramidPtr RgbdCameraPyramid::create(const cv::Mat& base_intensity, const cv::Mat& base_depth)
 {
-  return boost::make_shared<RgbdImagePyramid>(*this, base_intensity, base_depth);
+  return RgbdImagePyramidPtr(new RgbdImagePyramid(*this, base_intensity, base_depth));
 }
 
 void RgbdCameraPyramid::build(size_t levels)
