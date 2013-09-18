@@ -98,6 +98,15 @@ bool DenseTracker::Result::isNaN() const
   return !std::isfinite(Transformation.matrix().sum()) || !std::isfinite(Information.sum());
 }
 
+DenseTracker::Result::Result() :
+    LogLikelihood(std::numeric_limits<double>::max())
+{
+  double nan = std::numeric_limits<double>::quiet_NaN();
+  Transformation.linear().setConstant(nan);
+  Transformation.translation().setConstant(nan);
+  Information.setIdentity();
+}
+
 void DenseTracker::Result::setIdentity()
 {
   Transformation.setIdentity();
@@ -125,12 +134,43 @@ double DenseTracker::IterationStats::InformationConditionNumber() const
   return std::abs(ev(5) / ev(0));
 }
 
+
+bool DenseTracker::LevelStats::HasIterationWithIncrement() const
+{
+  int min = TerminationCriterion == DenseTracker::TerminationCriteria::LogLikelihoodDecreased || TerminationCriterion == DenseTracker::TerminationCriteria::TooFewConstraints ? 2 : 1;
+
+  return Iterations.size() >= min;
+}
+
 DenseTracker::IterationStats& DenseTracker::LevelStats::LastIterationWithIncrement()
 {
+  if(!HasIterationWithIncrement())
+  {
+    std::cerr << "awkward " << *this << std::endl;
+
+    assert(false);
+  }
+
   return TerminationCriterion == DenseTracker::TerminationCriteria::LogLikelihoodDecreased ? Iterations[Iterations.size() - 2] : Iterations[Iterations.size() - 1];
 }
 
 DenseTracker::IterationStats& DenseTracker::LevelStats::LastIteration()
+{
+  return Iterations.back();
+}
+
+const DenseTracker::IterationStats& DenseTracker::LevelStats::LastIterationWithIncrement() const
+{
+  if(!HasIterationWithIncrement())
+  {
+    std::cerr << "awkward " << *this << std::endl;
+
+    assert(false);
+  }
+  return TerminationCriterion == DenseTracker::TerminationCriteria::LogLikelihoodDecreased ? Iterations[Iterations.size() - 2] : Iterations[Iterations.size() - 1];
+}
+
+const DenseTracker::IterationStats& DenseTracker::LevelStats::LastIteration() const
 {
   return Iterations.back();
 }

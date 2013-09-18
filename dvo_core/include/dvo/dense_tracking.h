@@ -75,6 +75,7 @@ public:
       IterationsExceeded,
       IncrementTooSmall,
       LogLikelihoodDecreased,
+      TooFewConstraints,
       NumCriteria
     };
   };
@@ -106,6 +107,8 @@ public:
     TerminationCriteria::Enum TerminationCriterion;
     IterationStatsVector Iterations;
 
+    bool HasIterationWithIncrement() const;
+
     IterationStats& LastIterationWithIncrement();
     IterationStats& LastIteration();
 
@@ -128,6 +131,8 @@ public:
     double LogLikelihood;
 
     Stats Statistics;
+
+    Result();
 
     bool isNaN() const;
     void setIdentity();
@@ -234,7 +239,7 @@ std::ostream& operator<< (std::basic_ostream<CharT, Traits> &out, const dvo::Den
 template<typename CharT, typename Traits>
 std::ostream& operator<< (std::basic_ostream<CharT, Traits> &o, const dvo::DenseTracker::IterationStats &s)
 {
-  o << "Iteration: " << s.Id << " DataLogLikelihood: " << s.TDistributionLogLikelihood << " PriorLogLikelihood: " << s.PriorLogLikelihood << std::endl;
+  o << "Iteration: " << s.Id << " ValidConstraints: " << s.ValidConstraints << " DataLogLikelihood: " << s.TDistributionLogLikelihood << " PriorLogLikelihood: " << s.PriorLogLikelihood << std::endl;
 
   return o;
 }
@@ -254,6 +259,9 @@ std::ostream& operator<< (std::basic_ostream<CharT, Traits> &o, const dvo::Dense
     break;
   case dvo::DenseTracker::TerminationCriteria::LogLikelihoodDecreased:
     termination = "LogLikelihoodDecreased";
+    break;
+  case dvo::DenseTracker::TerminationCriteria::TooFewConstraints:
+    termination = "TooFewConstraints";
     break;
   default:
     break;

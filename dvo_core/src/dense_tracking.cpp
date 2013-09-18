@@ -134,9 +134,13 @@ bool DenseTracker::match(dvo::core::PointSelection& reference, dvo::core::RgbdIm
 
   bool success = true;
 
-  if(!cfg.UseInitialEstimate)
+  if(cfg.UseInitialEstimate)
   {
-    result.Transformation.setIdentity();
+    assert(!result.isNaN() && "Provided initialization is NaN!");
+  }
+  else
+  {
+    result.setIdentity();
   }
 
   // our first increment is the given guess
@@ -267,6 +271,17 @@ bool DenseTracker::match(dvo::core::PointSelection& reference, dvo::core::RgbdIm
           dvo::core::computeResidualsSse(first_point, last_point, cur, K, transformf, wref, wcur, compute_residuals_result);
         }
         size_t n = (compute_residuals_result.last_residual - compute_residuals_result.first_residual);
+        iteration_stats.ValidConstraints = n;
+
+        if(n < 6)
+        {
+          initial.revert();
+          estimate.revert();
+
+          level_stats.TerminationCriterion = TerminationCriteria::TooFewConstraints;
+
+          break;
+        }
 
         if(itctx_.IsFirstIterationOnLevel())
         {
@@ -281,7 +296,6 @@ bool DenseTracker::match(dvo::core::PointSelection& reference, dvo::core::RgbdIm
 
         float ll = computeCompleteDataLogLikelihood(compute_residuals_result.first_residual, compute_residuals_result.last_residual, weights.begin(), mean, precision);
 
-        iteration_stats.ValidConstraints = n;
         iteration_stats.TDistributionLogLikelihood = -ll;
         iteration_stats.TDistributionMean = mean.cast<double>();
         iteration_stats.TDistributionPrecision = precision.cast<double>();
@@ -384,6 +398,8 @@ bool DenseTracker::match(dvo::core::PointSelection& reference, dvo::core::RgbdIm
         initial.revert();
         estimate.revert();
 
+        level_stats.TerminationCriterion = TerminationCriteria::LogLikelihoodDecreased;
+
         break;
       }
 
@@ -421,9 +437,6 @@ bool DenseTracker::match(dvo::core::PointSelection& reference, dvo::core::RgbdIm
 //      sw_it[itctx_.Level].stopAndPrint();
     }
     while(accept && x.lpNorm<Eigen::Infinity>() > cfg.Precision && !itctx_.IterationsExceeded());
-
-    if(!accept)
-      level_stats.TerminationCriterion = TerminationCriteria::LogLikelihoodDecreased;
 
     if(x.lpNorm<Eigen::Infinity>() <= cfg.Precision)
       level_stats.TerminationCriterion = TerminationCriteria::IncrementTooSmall;
