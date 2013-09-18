@@ -128,6 +128,7 @@ public:
     next_keyframe_id_(1),
     next_odometry_vertex_id_(-1),
     next_odometry_edge_id_(-1),
+    validator_pool_(boost::bind(&KeyframeGraphImpl::createConstraintProposalValidator, this)),
     validation_tracker_pool_(boost::bind(boost::make_shared<dvo::DenseTracker>))
   {
     // g2o setup
@@ -683,6 +684,19 @@ private:
 
       return inv;
     }
+
+    bool isConstraintBetweenSameFrames(const ConstraintProposal& other)
+    {
+      return (Reference->id() == other.Reference->id() && Current->id() == other.Current->id()) || (Reference->id() == other.Current->id() && Current->id() == other.Reference->id());
+    }
+
+    void printVotingResults(std::ostream& out, const std::string indent = "") const
+    {
+      out << indent << "Proposal " << Reference->id() << "->" << Current->id() << " " << (Accept() ? "accept" : "reject") << std::endl;
+
+      for(ConstraintProposal::VoteVector::const_iterator it = Votes.begin(); it != Votes.end(); ++it)
+        out << indent << "  " << it->Reason << std::endl;
+    }
   };
 
   typedef boost::shared_ptr<ConstraintProposal> ConstraintProposalPtr;
@@ -690,7 +704,7 @@ private:
 
   struct ConstraintProposalVoter
   {
-    virtual ~ConstraintProposalVoter();
+    virtual ~ConstraintProposalVoter() {};
 
     /**
      * These methods allow voters to get tracking results for additional proposals, which they might need for their
@@ -735,13 +749,13 @@ private:
     {
       for(ProposalPairVector::iterator it = pairs_.begin(); it != pairs_.end(); ++it)
       {
-        ConstraintProposal *worse = it->first->TotalScore() >= it->second->TotalScore() ? it->second : it->first;
+        ConstraintProposal *worse = it->first->TotalScore() >= it->second->TotalScore() && it->first->Accept() ? it->second : it->first;
 
-        for(ConstraintProposalVector::iterator it = proposals.begin(); it != proposals.end(); ++it)
+        for(ConstraintProposalVector::iterator proposal_it = proposals.begin(); proposal_it != proposals.end(); ++proposal_it)
         {
-          if(it->get() == worse)
+          if(proposal_it->get() == worse)
           {
-            proposals.erase(it);
+            proposals.erase(proposal_it);
             break;
           }
         }
@@ -765,7 +779,7 @@ private:
       if(provide_reason)
       {
         std::stringstream reason;
-        reason  << "CrossValidation " << diff_translation_norm << " <= " << TranslationThreshold;
+        reason << "CrossValidation " << diff_translation_norm << " <= " << TranslationThreshold;
 
         v.Reason = reason.str();
       }
@@ -806,7 +820,7 @@ private:
       if(provide_reason)
       {
         std::stringstream reason;
-        reason  << "TrackingResultValidation " << ratio << " >= " << RatioThreshold;
+        reason << "TrackingResultValidation " << ratio << " >= " << RatioThreshold;
 
         v.Reason = reason.str();
       }
@@ -825,8 +839,7 @@ private:
     virtual ConstraintProposal::Vote vote(const ConstraintProposal& proposal, bool provide_reason)
     {
       const dvo::DenseTracker::LevelStats &l = proposal.TrackingResult.Statistics.Levels.back();
-      const dvo::DenseTracker::IterationStats &it = l.LastIterationWithIncrement();
-      double ratio = double(it.ValidConstraints) / double(l.MaxValidPixels);
+      double ratio = l.HasIterationWithIncrement() ? double(l.LastIterationWithIncrement().ValidConstraints) / double(l.ValidPixels) : 0.0;
 
       ConstraintProposal::Vote v;
       v.Decision = ratio >= RatioThreshold ? ConstraintProposal::Vote::Accept : ConstraintProposal::Vote::Reject;
@@ -834,7 +847,7 @@ private:
       if(provide_reason)
       {
         std::stringstream reason;
-        reason  << "ConstraintRatio " << ratio << " >= " << RatioThreshold;
+        reason << "ConstraintRatio " << ratio << " >= " << RatioThreshold;
 
         v.Reason = reason.str();
       }
@@ -851,12 +864,12 @@ private:
     virtual ConstraintProposal::Vote vote(const ConstraintProposal& proposal, bool provide_reason)
     {
       ConstraintProposal::Vote v;
-      v.Decision = proposal.TrackingResult.isNaN() ? ConstraintProposal::Vote::Accept : ConstraintProposal::Vote::Reject;
+      v.Decision = proposal.TrackingResult.isNaN() ? ConstraintProposal::Vote::Reject : ConstraintProposal::Vote::Accept;
 
       if(provide_reason)
       {
         std::stringstream reason;
-        reason  << "NaNResult " << proposal.TrackingResult.isNaN();
+        reason << "NaNResult " << proposal.TrackingResult.isNaN();
 
         v.Reason = reason.str();
       }
@@ -875,12 +888,12 @@ private:
       bool is_odometry_constraint = std::abs(proposal.Reference->id() - proposal.Current->id()) <= 1;
 
       ConstraintProposal::Vote v;
-      v.Decision = is_odometry_constraint ? ConstraintProposal::Vote::Accept : ConstraintProposal::Vote::Reject;
+      v.Decision = is_odometry_constraint ? ConstraintProposal::Vote::Reject : ConstraintProposal::Vote::Accept;
 
       if(provide_reason)
       {
         std::stringstream reason;
-        reason  << "OdometryConstraint " << is_odometry_constraint;
+        reason << "OdometryConstraint " << is_odometry_constraint;
 
         v.Reason = reason.str();
       }
@@ -895,9 +908,37 @@ private:
   public:
     struct Stage
     {
+    private:
+      friend struct ConstraintProposalValidator;
+
       int Id;
+      bool OnlyKeepBest;
       dvo::DenseTracker::Config TrackingConfig;
       ConstraintProposalVoterVector Voters;
+
+      Stage(int id) :
+        Id(id),
+        OnlyKeepBest(false)
+      {
+      }
+    public:
+      Stage& keepBest()
+      {
+        OnlyKeepBest = true;
+        return *this;
+      }
+
+      Stage& keepAll()
+      {
+        OnlyKeepBest = false;
+        return *this;
+      }
+
+      Stage& trackingConfig(const dvo::DenseTracker::Config& cfg)
+      {
+        TrackingConfig = cfg;
+        return *this;
+      }
 
       Stage& addVoter(ConstraintProposalVoter* v)
       {
@@ -912,12 +953,8 @@ private:
 
     Stage& createStage(int id)
     {
-      stages_.push_back(Stage());
-
-      Stage& s = stages_.back();
-      s.Id = id;
-
-      return s;
+      stages_.push_back(Stage(id));
+      return stages_.back();
     }
 
     void validate(ConstraintProposalVector& proposals, bool debug = false)
@@ -925,9 +962,9 @@ private:
       for(StageVector::iterator it = stages_.begin(); it != stages_.end(); ++it)
       {
         // reset votes and tracking results
-        for(ConstraintProposalVector::iterator it = proposals.begin(); it != proposals.end(); ++it)
+        for(ConstraintProposalVector::iterator proposal_it = proposals.begin(); proposal_it != proposals.end(); ++proposal_it)
         {
-          ConstraintProposalPtr& p = *it;
+          ConstraintProposalPtr& p = *proposal_it;
 
           p->clearVotes();
           p->TrackingResult.clearStatistics();
@@ -935,17 +972,50 @@ private:
 
         validate(*it, proposals, debug);
 
-        // TODO: do some logging
+        if(debug)
+          printVotingResults(*it, proposals);
 
         // remove rejected proposals
-        std::remove_if(proposals.begin(), proposals.end(), boost::bind(&ConstraintProposal::Reject, _1));
+        proposals.erase(std::remove_if(proposals.begin(), proposals.end(), boost::bind(&ConstraintProposal::Reject, _1)), proposals.end());
+
+        // only keep the best result if there are multiple results for one relationship
+        if(it->OnlyKeepBest)
+          keepBest(proposals);
 
         // update initial transformations
-        for(ConstraintProposalVector::iterator it = proposals.begin(); it != proposals.end(); ++it)
+        for(ConstraintProposalVector::iterator proposal_it = proposals.begin(); proposal_it != proposals.end(); ++proposal_it)
         {
-          ConstraintProposalPtr& p = *it;
+          ConstraintProposalPtr& p = *proposal_it;
 
           p->InitialTransformation = p->TrackingResult.Transformation.inverse();
+        }
+      }
+    }
+
+    void keepBest(ConstraintProposalVector& proposals)
+    {
+      for(ConstraintProposalVector::iterator it = proposals.begin(); it != proposals.end(); ++it)
+      {
+        ConstraintProposalPtr& p = *it;
+
+        for(ConstraintProposalVector::iterator inner_it = it + 1; inner_it != proposals.end();)
+        {
+          ConstraintProposalPtr& inner_p = *inner_it;
+
+          if(p->isConstraintBetweenSameFrames(*inner_p))
+          {
+            if(inner_p->TotalScore() > p->TotalScore())
+            {
+              // copy the better element to the place further in front
+              p.swap(inner_p);
+            }
+            // TODO: maybe this can be reformulated such that there can be a batch erase at the end?!
+            inner_it = proposals.erase(inner_it);
+          }
+          else
+          {
+            ++inner_it;
+          }
         }
       }
     }
@@ -966,6 +1036,7 @@ private:
       for(ConstraintProposalVector::iterator it = proposals.begin(); it != proposals.end(); ++it)
       {
         ConstraintProposalPtr& p = (*it);
+        p->TrackingResult.Transformation = p->InitialTransformation;
         tracker_.match(*p->Reference->image(), *p->Current->image(), p->TrackingResult);
       }
 
@@ -974,7 +1045,7 @@ private:
       {
         ConstraintProposal& p = *(*it);
 
-        for(ConstraintProposalVoterVector::iterator voter_it = stage.Voters.begin(); voter_it != stage.Voters.end(); ++it)
+        for(ConstraintProposalVoterVector::iterator voter_it = stage.Voters.begin(); voter_it != stage.Voters.end(); ++voter_it)
         {
           p.Votes.push_back((*voter_it)->vote(p, debug));
 
@@ -984,28 +1055,41 @@ private:
       }
 
       // remove additional proposals
-      for(ConstraintProposalVoterVector::iterator it = stage.Voters.begin(); it != stage.Voters.end(); ++it)
+      for(ConstraintProposalVoterVector::reverse_iterator it = stage.Voters.rbegin(); it != stage.Voters.rend(); ++it)
         (*it)->removeAdditionalProposals(proposals);
+    }
+
+    void printVotingResults(const Stage& stage, const ConstraintProposalVector& proposals)
+    {
+      std::cout << "Stage " << stage.Id << ":" << std::endl;
+
+      for(ConstraintProposalVector::const_iterator it = proposals.begin(); it != proposals.end(); ++it)
+        (*it)->printVotingResults(std::cout, "  ");
     }
   };
 
-  ConstraintProposalValidator createConstraintProposalValidator()
+  typedef boost::shared_ptr<ConstraintProposalValidator> ConstraintProposalValidatorPtr;
+  typedef tbb::enumerable_thread_specific<ConstraintProposalValidatorPtr> ConstraintProposalValidatorPool;
+
+  ConstraintProposalValidatorPtr createConstraintProposalValidator()
   {
-    ConstraintProposalValidator r;
+    ConstraintProposalValidatorPtr r = boost::make_shared<ConstraintProposalValidator>();
 
-    ConstraintProposalValidator::Stage &s1 = r.createStage(1);
-    s1.TrackingConfig = validation_tracker_cfg_;
-    s1.addVoter(new OdometryConstraintVoter());
-    s1.addVoter(new NaNResultVoter());
-    s1.addVoter(new ConstraintRatioVoter(cfg_.MinEquationSystemConstraintRatio));
-    s1.addVoter(new TrackingResultEvaluationVoter(cfg_.NewConstraintMinEntropyRatioCoarse));
-    s1.addVoter(new CrossValidationVoter(0.05));
+    r->createStage(1)
+        .trackingConfig(validation_tracker_cfg_)
+        .keepAll()
+        .addVoter(new OdometryConstraintVoter())
+        .addVoter(new NaNResultVoter())
+        .addVoter(new ConstraintRatioVoter(cfg_.MinEquationSystemConstraintRatio))
+        .addVoter(new TrackingResultEvaluationVoter(cfg_.NewConstraintMinEntropyRatioCoarse))
+        .addVoter(new CrossValidationVoter(0.05));
 
-    ConstraintProposalValidator::Stage &s2 = r.createStage(2);
-    s2.TrackingConfig = constraint_tracker_cfg_;
-    s2.addVoter(new ConstraintRatioVoter(cfg_.MinEquationSystemConstraintRatio));
-    s2.addVoter(new TrackingResultEvaluationVoter(cfg_.NewConstraintMinEntropyRatioCoarse));
-    s2.addVoter(new NaNResultVoter());
+    r->createStage(2)
+        .trackingConfig(constraint_tracker_cfg_)
+        .keepBest()
+        .addVoter(new NaNResultVoter())
+        .addVoter(new ConstraintRatioVoter(cfg_.MinEquationSystemConstraintRatio))
+        .addVoter(new TrackingResultEvaluationVoter(cfg_.NewConstraintMinEntropyRatioFine));
 
     return r;
   }
@@ -1019,6 +1103,35 @@ private:
     tbb::parallel_reduce(tbb::blocked_range<KeyframeVector::const_iterator>(constraint_candidates.begin(), constraint_candidates.end(), grain_size), body);
 
     constraints.assign(body.proposals.begin(), body.proposals.end());
+
+    ConstraintProposalVector proposals;
+
+    for(KeyframeVector::const_iterator it = constraint_candidates.begin(); it != constraint_candidates.end(); ++it)
+    {
+      ConstraintProposalPtr p1 = boost::make_shared<ConstraintProposal>();
+      p1->Reference = keyframe;
+      p1->Current = *it;
+      p1->InitialTransformation.setIdentity();
+
+      ConstraintProposalPtr p2 = boost::make_shared<ConstraintProposal>();
+      p2->Reference = keyframe;
+      p2->Current = *it;
+      p2->InitialTransformation = (*it)->pose().inverse() * keyframe->pose();
+
+      proposals.push_back(p1);
+      proposals.push_back(p2);
+    }
+
+    ConstraintProposalValidatorPtr& validator = validator_pool_.local();
+    validator->validate(proposals, false);
+
+    std::cerr << "old: " << constraints.size() << " new: " << proposals.size() << std::endl;
+
+    //for(ConstraintVector::iterator it = constraints.begin(); it != constraints.end(); ++it)
+    //{
+    //  std::cerr << it->first->id() << "->" << keyframe->id() << std::endl;
+    //}
+
   }
 
   int insertNewKeyframeConstraints(const KeyframePtr& keyframe, const ConstraintVector& constraints)
@@ -1298,6 +1411,7 @@ private:
 
   dvo_slam::KeyframeGraphConfig cfg_;
 
+  ConstraintProposalValidatorPool validator_pool_;
   DenseTrackerPool validation_tracker_pool_;
 
   KeyframeGraph* me_;
