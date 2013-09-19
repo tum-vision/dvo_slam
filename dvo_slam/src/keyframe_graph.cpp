@@ -424,7 +424,7 @@ private:
     ;
 
     KeyframeVector constraint_candidates;
-    ConstraintVector constraints;
+    ConstraintProposalVector constraints;
 
     // insert keyframe into data structures
     KeyframePtr keyframe = insertNewKeyframe(map);
@@ -447,7 +447,7 @@ private:
     sw_validation.stopAndPrint();
     sw_insert.start();
     // update graph
-    int max_distance = insertNewKeyframeConstraints(keyframe, constraints);
+    int max_distance = insertNewKeyframeConstraints(constraints);
     sw_insert.stopAndPrint();
 
     if(max_distance >= cfg_.MinConstraintDistance)
@@ -631,6 +631,26 @@ private:
       Vote() : Decision(Reject), Score(0.0) {}
     };
     typedef std::vector<Vote> VoteVector;
+
+    static boost::shared_ptr<ConstraintProposal> createWithIdentity(const KeyframePtr& reference, const KeyframePtr& current)
+    {
+      boost::shared_ptr<ConstraintProposal> p = boost::make_shared<ConstraintProposal>();
+      p->Reference = reference;
+      p->Current = current;
+      p->InitialTransformation.setIdentity();
+
+      return p;
+    }
+
+    static boost::shared_ptr<ConstraintProposal> createWithRelative(const KeyframePtr& reference, const KeyframePtr& current)
+    {
+      boost::shared_ptr<ConstraintProposal> p = boost::make_shared<ConstraintProposal>();
+      p->Reference = reference;
+      p->Current = current;
+      p->InitialTransformation = current->pose().inverse() * reference->pose();
+
+      return p;
+    }
 
     KeyframePtr Reference, Current;
     Eigen::Affine3d InitialTransformation;
@@ -1094,6 +1114,58 @@ private:
     return r;
   }
 
+  struct ValidateConstraintProposalReduction
+  {
+  private:
+    ConstraintProposalValidatorPool& validators_;
+    ConstraintProposalVector proposals_;
+
+    ConstraintProposalValidatorPtr& validator()
+    {
+      return validators_.local();
+    }
+
+    void appendProposals(ConstraintProposalVector& pv)
+    {
+      proposals_.reserve(proposals_.size() + pv.size());
+      proposals_.insert(proposals_.end(), pv.begin(), pv.end());
+    }
+
+  public:
+    typedef tbb::blocked_range<ConstraintProposalVector::const_iterator> ConstraintPoposalConstRange;
+
+    ValidateConstraintProposalReduction(ConstraintProposalValidatorPool& validators) :
+      validators_(validators)
+    {
+    }
+
+    ValidateConstraintProposalReduction(const ValidateConstraintProposalReduction& other, tbb::split) :
+      validators_(other.validators_)
+    {
+    }
+
+    ConstraintProposalVector& proposals()
+    {
+      return proposals_;
+    }
+
+    void operator()(const ConstraintPoposalConstRange& r)
+    {
+      ConstraintProposalVector proposals;
+      proposals.assign(r.begin(), r.end());
+
+      validator()->validate(proposals);
+
+      appendProposals(proposals);
+    }
+
+    void join(ValidateConstraintProposalReduction& other)
+    {
+      appendProposals(other.proposals_);
+      validator()->keepBest(proposals_);
+    }
+  };
+
   void validateKeyframeConstraintsParallel(const KeyframeVector& constraint_candidates, const KeyframePtr& keyframe, ConstraintVector& constraints)
   {
     ValidateKeyframeConstraintReduction body(cfg_, validation_tracker_pool_, validation_tracker_cfg_, constraint_tracker_cfg_, keyframe);
@@ -1103,35 +1175,25 @@ private:
     tbb::parallel_reduce(tbb::blocked_range<KeyframeVector::const_iterator>(constraint_candidates.begin(), constraint_candidates.end(), grain_size), body);
 
     constraints.assign(body.proposals.begin(), body.proposals.end());
+  }
 
-    ConstraintProposalVector proposals;
+  void validateKeyframeConstraintsParallel(const KeyframeVector& constraint_candidates, const KeyframePtr& keyframe, ConstraintProposalVector& proposals)
+  {
+    ConstraintProposalVector initial_proposals;
+    initial_proposals.reserve(constraint_candidates.size() * 2);
 
     for(KeyframeVector::const_iterator it = constraint_candidates.begin(); it != constraint_candidates.end(); ++it)
     {
-      ConstraintProposalPtr p1 = boost::make_shared<ConstraintProposal>();
-      p1->Reference = keyframe;
-      p1->Current = *it;
-      p1->InitialTransformation.setIdentity();
-
-      ConstraintProposalPtr p2 = boost::make_shared<ConstraintProposal>();
-      p2->Reference = keyframe;
-      p2->Current = *it;
-      p2->InitialTransformation = (*it)->pose().inverse() * keyframe->pose();
-
-      proposals.push_back(p1);
-      proposals.push_back(p2);
+      initial_proposals.push_back(ConstraintProposal::createWithIdentity(keyframe, *it));
+      initial_proposals.push_back(ConstraintProposal::createWithRelative(keyframe, *it));
     }
 
-    ConstraintProposalValidatorPtr& validator = validator_pool_.local();
-    validator->validate(proposals, false);
+    ValidateConstraintProposalReduction body(validator_pool_);
+    size_t grain_size = cfg_.UseMultiThreading ? 1 : initial_proposals.size();
 
-    std::cerr << "old: " << constraints.size() << " new: " << proposals.size() << std::endl;
+    tbb::parallel_reduce(ValidateConstraintProposalReduction::ConstraintPoposalConstRange(initial_proposals.begin(), initial_proposals.end(), grain_size), body);
 
-    //for(ConstraintVector::iterator it = constraints.begin(); it != constraints.end(); ++it)
-    //{
-    //  std::cerr << it->first->id() << "->" << keyframe->id() << std::endl;
-    //}
-
+    proposals = body.proposals();
   }
 
   int insertNewKeyframeConstraints(const KeyframePtr& keyframe, const ConstraintVector& constraints)
@@ -1155,6 +1217,29 @@ private:
       max_distance = std::max(max_distance, distance);
     }
     //std::cerr << "new constraints " << inserted << "/" << constraints.size() << std::endl;
+
+    return max_distance;
+  }
+
+  int insertNewKeyframeConstraints(const ConstraintProposalVector& proposals)
+  {
+    int inserted = 0;
+    int max_distance = -1;
+
+    for(ConstraintProposalVector::const_iterator it = proposals.begin(); it != proposals.end(); ++it)
+    {
+      const ConstraintProposalPtr& p = *it;
+
+      int distance = std::abs(p->Reference->id() - p->Current->id());
+      bool odometry_constraint = std::abs(distance) == 1;
+
+      assert(!odometry_constraint);
+
+      inserted++;
+      insertConstraint(p->Reference, p->Current, p->TrackingResult);
+
+      max_distance = std::max(max_distance, distance);
+    }
 
     return max_distance;
   }
