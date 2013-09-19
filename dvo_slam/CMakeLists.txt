@@ -40,6 +40,10 @@ rosbuild_add_library(${PROJECT_NAME}
   src/local_map.cpp
   src/local_tracker.cpp
   
+  src/constraints/constraint_proposal.cpp
+  src/constraints/constraint_proposal_voter.cpp
+  src/constraints/constraint_proposal_validator.cpp
+  
   src/serialization/map_serializer_interface.cpp
   src/serialization/map_serializer.cpp
   
