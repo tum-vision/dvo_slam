@@ -128,8 +128,7 @@ public:
     next_keyframe_id_(1),
     next_odometry_vertex_id_(-1),
     next_odometry_edge_id_(-1),
-    validator_pool_(boost::bind(&KeyframeGraphImpl::createConstraintProposalValidator, this)),
-    validation_tracker_pool_(boost::bind(boost::make_shared<dvo::DenseTracker>))
+    validator_pool_(boost::bind(&KeyframeGraphImpl::createConstraintProposalValidator, this))
   {
     // g2o setup
     keyframegraph_.setAlgorithm(
@@ -227,7 +226,7 @@ public:
 
     for(KeyframeVector::iterator it = keyframes_.begin(); it != keyframes_.end(); ++it)
     {
-      ConstraintVector constraints;
+      ConstraintProposalVector constraints;
       KeyframeVector constraint_candidates, filtered_constraint_candidates;
       constraint_search_->findPossibleConstraints(keyframes_, *it, constraint_candidates);
 
@@ -248,7 +247,7 @@ public:
       validateKeyframeConstraintsParallel(filtered_constraint_candidates, *it, constraints);
 
       // update graph
-      insertNewKeyframeConstraints(*it, constraints);
+      insertNewKeyframeConstraints(constraints);
       std::cerr << constraints.size() << " additional constraints" << std::endl;
     }
 
@@ -285,7 +284,7 @@ public:
 
     map_changed_(*me_);
 
-    ROS_WARN_STREAM("created validation tracker instances: " << validation_tracker_pool_.size());
+    ROS_WARN_STREAM("created validation tracker instances: " << validator_pool_.size());
 
     std::cerr << keyframes_.size() << " keyframes" << std::endl;
   }
@@ -345,9 +344,9 @@ public:
     assert(kf1->id() == (*edge_it)->vertex(0)->id());
     assert(kf2->id() == (*edge_it)->vertex(1)->id());
 
-    DenseTrackerPool::reference tracker = validation_tracker_pool_.local();
-    tracker->configure(validation_tracker_cfg_);
-    result = tracker->computeIntensityErrorImage(*kf2->image(), *kf1->image(), toAffine(e->measurement()));
+    dvo::DenseTracker tracker;
+    tracker.configure(validation_tracker_cfg_);
+    result = tracker.computeIntensityErrorImage(*kf2->image(), *kf1->image(), toAffine(e->measurement()));
 
     std::map<int, LocalTracker::TrackingResult>::iterator r = constraint_tracking_results_.find(edge_id);
 
@@ -374,10 +373,7 @@ private:
   typedef g2o::BlockSolver_6_3 BlockSolver;
   typedef g2o::LinearSolverCSparse<BlockSolver::PoseMatrixType> LinearSolver;
 
-  typedef std::vector<std::pair<KeyframePtr, LocalTracker::TrackingResult> > ConstraintVector;
-
   typedef boost::shared_ptr<dvo::DenseTracker> DenseTrackerPtr;
-  typedef tbb::enumerable_thread_specific<DenseTrackerPtr> DenseTrackerPool;
 
   void execOptimization()
   {
@@ -477,137 +473,6 @@ private:
 
     map_changed_(*me_);
   }
-
-  struct ValidateKeyframeConstraintReduction
-  {
-    const dvo_slam::KeyframeGraphConfig& config;
-    DenseTrackerPool& trackers;
-    const dvo::DenseTracker::Config &simple_config, &final_config;
-    const KeyframePtr& keyframe;
-    ConstraintVector proposals;
-
-    ValidateKeyframeConstraintReduction(const dvo_slam::KeyframeGraphConfig& config, DenseTrackerPool& trackers, const dvo::DenseTracker::Config &simple_config, const dvo::DenseTracker::Config& final_config, const KeyframePtr& keyframe) :
-      config(config),
-      trackers(trackers),
-      simple_config(simple_config),
-      final_config(final_config),
-      keyframe(keyframe)
-    {
-    }
-
-    ValidateKeyframeConstraintReduction(ValidateKeyframeConstraintReduction& other, tbb::split) :
-      config(other.config),
-      trackers(other.trackers),
-      simple_config(other.simple_config),
-      final_config(other.final_config),
-      keyframe(other.keyframe)
-    {
-    }
-
-    void operator()(const tbb::blocked_range<KeyframeVector::const_iterator>& r)
-    {
-      for(KeyframeVector::const_iterator it = r.begin(); it != r.end(); ++it)
-      {
-        const KeyframePtr& constraint = (*it);
-        Eigen::Affine3d transform_proposal;
-
-        if(constraint == keyframe) continue;
-        if(constraint->id() == (keyframe->id() - 1)) continue;
-
-        // TODO: move to KeyframeConstraintSearch
-        //double angle = keyframe->pose().rotation().col(2).head<3>().dot(constraint->pose().rotation().col(2).head<3>());
-        //if(angle < 0) continue;
-
-        double simple_threshold = config.NewConstraintMinEntropyRatioCoarse, final_threshold = config.NewConstraintMinEntropyRatioFine, simple_constraint_threshold = config.MinEquationSystemConstraintRatio, final_constraint_threshold = config.MinEquationSystemConstraintRatio;
-        double ratio_identity, ratio_relative, ratio_final, constraint_ratio_identity, constraint_ratio_relative, constraint_ratio_final;
-
-        LocalTracker::TrackingResult r_identity, r_identity2, r_relative, r_relative2, *r_final = 0;
-        DenseTrackerPool::reference t = trackers.local();
-        t->configure(simple_config);
-
-        r_identity.Transformation.setIdentity();
-        r_identity2.Transformation.setIdentity();
-
-        t->match(*keyframe->image(), *constraint->image(), r_identity);
-        t->match(*constraint->image(), *keyframe->image(), r_identity2);
-
-        constraint_ratio_identity = double(r_identity.Statistics.Levels.back().Iterations.back().ValidConstraints) / double(r_identity.Statistics.Levels.back().ValidPixels);
-        ratio_identity = std::min(keyframe->evaluation()->ratioWithAverage(r_identity), constraint->evaluation()->ratioWithAverage(r_identity2));
-        ratio_identity = std::isfinite(ratio_identity) ? ratio_identity : 0.0;
-
-        Sophus::SE3d identity_diff((r_identity.Transformation * r_identity2.Transformation).matrix());
-
-        if(identity_diff.translation().lpNorm<2>() > 0.05)
-        {
-          ratio_identity = 0.0;
-        }
-        r_identity.Statistics.Levels.front().Iterations.front().TDistributionLogLikelihood = identity_diff.log().head<3>().lpNorm<2>();
-
-        r_relative.Transformation = constraint->pose().inverse() * keyframe->pose();
-        r_relative2.Transformation = keyframe->pose().inverse() * constraint->pose();
-
-        t->match(*keyframe->image(), *constraint->image(), r_relative);
-        t->match(*constraint->image(), *keyframe->image(), r_relative2);
-
-        constraint_ratio_relative = double(r_relative.Statistics.Levels.back().Iterations.back().ValidConstraints) / double(r_relative.Statistics.Levels.back().ValidPixels);
-        ratio_relative = std::min(keyframe->evaluation()->ratioWithAverage(r_relative), constraint->evaluation()->ratioWithAverage(r_relative2));
-        ratio_relative = std::isfinite(ratio_relative) ? ratio_relative : 0.0;
-
-        Sophus::SE3d relative_diff((r_relative.Transformation * r_relative2.Transformation).matrix());
-
-        if(relative_diff.translation().lpNorm<2>() > 0.05)
-        {
-          ratio_relative = 0.0;
-        }
-        r_relative.Statistics.Levels.front().Iterations.front().TDistributionLogLikelihood = relative_diff.log().head<3>().lpNorm<2>();
-
-        if(ratio_identity > simple_threshold || ratio_relative > simple_threshold)
-        {
-          if(ratio_identity > ratio_relative)
-          {
-            if(constraint_ratio_identity > simple_constraint_threshold/* && r_identity.Statistics.Levels.back().LastIterationWithIncrement().InformationConditionNumber() < 250*/)
-            {
-              r_final = &r_identity;
-            }
-          }
-          else
-          {
-            if(constraint_ratio_relative > simple_constraint_threshold/* && r_relative.Statistics.Levels.back().LastIterationWithIncrement().InformationConditionNumber() < 250*/)
-            {
-              r_final = &r_relative;
-            }
-          }
-        }
-
-        if(r_final != 0)
-        {
-          if(r_final->isNaN())
-          {
-            ROS_ERROR("NAN in LoopClosure!");
-            continue;
-          }
-
-          t->configure(final_config);
-          r_final->Transformation = r_final->Transformation.inverse();
-          t->match(*keyframe->image(), *constraint->image(), *r_final);
-          constraint_ratio_final = double(r_final->Statistics.Levels.back().Iterations.back().ValidConstraints) / double(r_final->Statistics.Levels.back().ValidPixels);
-
-          ratio_final = std::min(keyframe->evaluation()->ratioWithAverage(*r_final), constraint->evaluation()->ratioWithAverage(*r_final)); //std::log(r_final->Information.determinant()) / std::max(keyframe->avgDivergenceFromFim(), constraint->avgDivergenceFromFim());
-          ratio_final = std::isfinite(ratio_final) ? ratio_final : 0.0;
-
-          if(ratio_final > final_threshold && constraint_ratio_final > final_constraint_threshold)
-          {
-            proposals.push_back(std::make_pair(constraint, *r_final));
-          }
-        }
-      }
-    }
-
-    void join(ValidateKeyframeConstraintReduction& other)
-    {
-      proposals.insert(proposals.end(), other.proposals.begin(), other.proposals.end());
-    }
-  };
 
   struct ConstraintProposal
   {
@@ -1166,17 +1031,6 @@ private:
     }
   };
 
-  void validateKeyframeConstraintsParallel(const KeyframeVector& constraint_candidates, const KeyframePtr& keyframe, ConstraintVector& constraints)
-  {
-    ValidateKeyframeConstraintReduction body(cfg_, validation_tracker_pool_, validation_tracker_cfg_, constraint_tracker_cfg_, keyframe);
-
-    size_t grain_size = cfg_.UseMultiThreading ? 1 : constraint_candidates.size();
-
-    tbb::parallel_reduce(tbb::blocked_range<KeyframeVector::const_iterator>(constraint_candidates.begin(), constraint_candidates.end(), grain_size), body);
-
-    constraints.assign(body.proposals.begin(), body.proposals.end());
-  }
-
   void validateKeyframeConstraintsParallel(const KeyframeVector& constraint_candidates, const KeyframePtr& keyframe, ConstraintProposalVector& proposals)
   {
     ConstraintProposalVector initial_proposals;
@@ -1194,31 +1048,6 @@ private:
     tbb::parallel_reduce(ValidateConstraintProposalReduction::ConstraintPoposalConstRange(initial_proposals.begin(), initial_proposals.end(), grain_size), body);
 
     proposals = body.proposals();
-  }
-
-  int insertNewKeyframeConstraints(const KeyframePtr& keyframe, const ConstraintVector& constraints)
-  {
-    int inserted = 0;
-    int max_distance = -1;
-
-    for(ConstraintVector::const_iterator it = constraints.begin(); it != constraints.end(); ++it)
-    {
-      //Eigen::Affine3d relative;
-      const KeyframePtr& constraint = it->first;
-
-      int distance = keyframe->id() - constraint->id();
-      bool odometry_constraint = std::abs(distance) == 1;
-
-      assert(!odometry_constraint);
-
-      inserted++;
-      insertConstraint(keyframe, constraint, it->second);
-
-      max_distance = std::max(max_distance, distance);
-    }
-    //std::cerr << "new constraints " << inserted << "/" << constraints.size() << std::endl;
-
-    return max_distance;
   }
 
   int insertNewKeyframeConstraints(const ConstraintProposalVector& proposals)
@@ -1497,7 +1326,6 @@ private:
   dvo_slam::KeyframeGraphConfig cfg_;
 
   ConstraintProposalValidatorPool validator_pool_;
-  DenseTrackerPool validation_tracker_pool_;
 
   KeyframeGraph* me_;
 
