@@ -69,6 +69,8 @@ public:
 
   cv::Mat computeIntensityErrorImage(int edge_id) const;
 
+  void debugLoopClosureConstraint(int keyframe1, int keyframe2) const;
+
 private:
   internal::KeyframeGraphImplPtr impl_;
 };

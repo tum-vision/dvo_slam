@@ -155,9 +155,7 @@ public:
   void configure(const dvo_slam::KeyframeGraphConfig& cfg)
   {
     cfg_ = cfg;
-
-    if(!constraint_search_)
-      constraint_search_.reset(new NearestNeighborConstraintSearch(cfg_.NewConstraintSearchRadius));
+    constraint_search_.reset(new NearestNeighborConstraintSearch(cfg_.NewConstraintSearchRadius));
   }
 
   void add(const LocalMap::Ptr& keyframe)
@@ -370,14 +368,32 @@ public:
       std::cerr << "kappa coarse: " << r->second.Statistics.Levels.front().LastIterationWithIncrement().InformationConditionNumber() << std::endl;
     }
 
-
     return result;
+  }
+
+  void debugLoopClosureConstraint(int keyframe1, int keyframe2)
+  {
+    std::cerr << dynamic_cast<NearestNeighborConstraintSearch*>(constraint_search_.get())->maxDistance() << std::endl;
+
+    KeyframePtr kf1 = keyframes_[keyframe1 - 1];
+    KeyframePtr kf2 = keyframes_[keyframe2 - 1];
+
+    if(!kf1 || !kf2) return;
+
+    ConstraintProposalVector initial_proposals;
+    initial_proposals.push_back(ConstraintProposal::createWithIdentity(kf1, kf2));
+    initial_proposals.push_back(ConstraintProposal::createWithRelative(kf1, kf2));
+    //initial_proposals.push_back(initial_proposals[0]->createInverseProposal());
+    //initial_proposals.push_back(initial_proposals[1]->createInverseProposal());
+    ConstraintProposalValidatorPtr& validator = validator_pool_.local();
+
+    validator->validate(initial_proposals, true);
   }
 private:
   typedef g2o::BlockSolver_6_3 BlockSolver;
   typedef g2o::LinearSolverCSparse<BlockSolver::PoseMatrixType> LinearSolver;
 
-  typedef boost::shared_ptr<dvo::DenseTracker> DenseTrackerPtr;
+  typedef tbb::enumerable_thread_specific<ConstraintProposalValidatorPtr> ConstraintProposalValidatorPool;
 
   void execOptimization()
   {
@@ -478,11 +494,6 @@ private:
     map_changed_(*me_);
   }
 
-
-
-
-    typedef tbb::enumerable_thread_specific<ConstraintProposalValidatorPtr> ConstraintProposalValidatorPool;
-
   ConstraintProposalValidatorPtr createConstraintProposalValidator()
   {
     ConstraintProposalValidatorPtr r = boost::make_shared<ConstraintProposalValidator>();
@@ -494,7 +505,8 @@ private:
         .addVoter(new NaNResultVoter())
         .addVoter(new ConstraintRatioVoter(cfg_.MinEquationSystemConstraintRatio))
         .addVoter(new TrackingResultEvaluationVoter(cfg_.NewConstraintMinEntropyRatioCoarse))
-        .addVoter(new CrossValidationVoter(0.05));
+        .addVoter(new CrossValidationVoter(1.0))
+   ;
 
     r->createStage(2)
         .trackingConfig(constraint_tracker_cfg_)
@@ -906,6 +918,12 @@ void KeyframeGraph::addMapChangedCallback(const KeyframeGraph::MapChangedCallbac
 cv::Mat KeyframeGraph::computeIntensityErrorImage(int edge_id) const
 {
   return impl_->computeIntensityErrorImage(edge_id);
+}
+
+
+void KeyframeGraph::debugLoopClosureConstraint(int keyframe1, int keyframe2) const
+{
+  impl_->debugLoopClosureConstraint(keyframe1, keyframe2);
 }
 
 const g2o::SparseOptimizer& KeyframeGraph::graph() const

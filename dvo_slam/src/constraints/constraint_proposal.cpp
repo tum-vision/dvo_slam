@@ -29,7 +29,7 @@ namespace constraints
 
 boost::shared_ptr<ConstraintProposal> ConstraintProposal::createWithIdentity(const KeyframePtr& reference, const KeyframePtr& current)
 {
-  boost::shared_ptr<ConstraintProposal> p = boost::make_shared<ConstraintProposal>();
+  boost::shared_ptr<ConstraintProposal> p(new ConstraintProposal());
   p->Reference = reference;
   p->Current = current;
   p->InitialTransformation.setIdentity();
@@ -39,7 +39,7 @@ boost::shared_ptr<ConstraintProposal> ConstraintProposal::createWithIdentity(con
 
 boost::shared_ptr<ConstraintProposal> ConstraintProposal::createWithRelative(const KeyframePtr& reference, const KeyframePtr& current)
 {
-  boost::shared_ptr<ConstraintProposal> p = boost::make_shared<ConstraintProposal>();
+  boost::shared_ptr<ConstraintProposal> p(new ConstraintProposal());
   p->Reference = reference;
   p->Current = current;
   p->InitialTransformation = current->pose().inverse() * reference->pose();
@@ -87,7 +87,7 @@ void ConstraintProposal::clearVotes()
 
 boost::shared_ptr<ConstraintProposal> ConstraintProposal::createInverseProposal() const
 {
-  boost::shared_ptr<ConstraintProposal> inv = boost::make_shared<ConstraintProposal>();
+  boost::shared_ptr<ConstraintProposal> inv(new ConstraintProposal());
   inv->Reference = Current;
   inv->Current = Reference;
   inv->InitialTransformation = InitialTransformation.inverse();

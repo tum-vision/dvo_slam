@@ -100,7 +100,8 @@ public:
     reconfigure_server_(nh_graph_),
     it_(nh_),
     graph_(0),
-    edge_id_prefix_("edge_")
+    edge_id_prefix_("edge_"),
+    keyframe1(-1)
   {
     void* native_visualizer;
     if(visualizer_.native(native_visualizer))
@@ -194,6 +195,25 @@ public:
     cv::cvtColor(hsv, rgb, CV_HSV2RGB);
   }
 
+  int keyframe1;
+
+  void onKeyframeClick(short keyframe_id, const dvo::visualization::CameraVisualizer&)
+  {
+    bool has_first = keyframe1 != -1;
+
+    if(has_first)
+    {
+      if(keyframe_id != keyframe1)
+        graph_->debugLoopClosureConstraint(keyframe1, keyframe_id);
+
+      keyframe1 = -1;
+    }
+    else
+    {
+      keyframe1 = keyframe_id;
+    }
+  }
+
   void update()
   {
     if(marker_server_ == 0 || graph_ == 0) return;
@@ -207,8 +227,10 @@ public:
 
       visualizer_.camera(id.str())
           ->color(dvo::visualization::Color::blue())
+          .onclick(boost::bind(&GraphVisualizerImpl::onKeyframeClick, this, keyframe->id(), _1))
           .update(keyframe->image()->level(0), keyframe->pose())
           .show(dvo::visualization::CameraVisualizer::ShowCameraAndCloud);
+
     }
 
       visualization_msgs::Marker m_odometry, m_loop;
