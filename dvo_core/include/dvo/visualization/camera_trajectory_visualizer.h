@@ -23,6 +23,7 @@
 
 
 #include <Eigen/Geometry>
+#include <boost/function.hpp>
 
 #include <dvo/core/rgbd_image.h>
 #include <dvo/util/fluent_interface.h>
@@ -75,9 +76,14 @@ public:
 
   typedef boost::shared_ptr<CameraVisualizer> Ptr;
 
+  typedef void OnClickCallbackSignature(const CameraVisualizer&);
+  typedef boost::function<OnClickCallbackSignature> OnClickCallback;
+
   virtual ~CameraVisualizer() {};
   FI_ATTRIBUTE(CameraVisualizer, std::string, name);
   FI_ATTRIBUTE(CameraVisualizer, Color, color);
+
+  virtual CameraVisualizer& onclick(const OnClickCallback& callback) { return *this; }
 
   virtual void show(Option option = ShowCameraAndCloud) = 0;
   virtual void hide() = 0;

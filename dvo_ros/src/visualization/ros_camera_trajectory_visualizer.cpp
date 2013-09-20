@@ -81,6 +81,12 @@ public:
     show(ShowNothing);
   }
 
+  virtual CameraVisualizer& onclick(const OnClickCallback& callback)
+  {
+    onclick_callback_ = callback;
+    return *this;
+  }
+
   virtual CameraVisualizer& update(const dvo::core::RgbdImage& img, const Eigen::Affine3d& pose)
   {
     // update marker
@@ -107,6 +113,7 @@ private:
   image_transport::Publisher& image_topic_;
   visualization_msgs::InteractiveMarker marker_;
   interactive_markers::InteractiveMarkerServer::FeedbackCallback marker_callback_;
+  OnClickCallback onclick_callback_;
 
   boost::shared_ptr<AsyncPointCloudBuilder::BuildJob> point_cloud_builder_;
   dvo::visualization::PointCloudAggregator& point_cloud_aggregator_;
@@ -143,6 +150,8 @@ private:
       point_cloud_builder_->image.intensity.convertTo(tmp, CV_8UC1);
       cv_bridge::CvImage img(h, "mono8", tmp);
       image_topic_.publish(img.toImageMsg());
+
+      onclick_callback_(*this);
     }
   }
 
