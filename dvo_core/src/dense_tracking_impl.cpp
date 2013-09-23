@@ -119,6 +119,14 @@ void computeResiduals(const PointIterator& first_point, const PointIterator& las
   }
 }
 
+static inline float depthStdDevZ(float depth)
+{
+  float sigma_z = depth - 0.4f;
+  sigma_z = 0.0012f + 0.0019f * sigma_z * sigma_z;
+
+  return sigma_z;
+}
+
 static const __m128 ONES = _mm_set1_ps(1.0f);
 static const __m128 BLEND_MASK = _mm_cmpgt_ps(_mm_setr_ps(0.0f, 1.0f, 0.0f, 0.0f), _mm_set1_ps(0.5f));
 
@@ -262,14 +270,23 @@ void computeResidualsSse(const PointIterator& first_point, const PointIterator& 
 
         __m128 residual_a = _mm_add_ps(_mm_mul_ps(current_weight_a, a), _mm_mul_ps(reference_weight_a, reference_a));
         _mm_store_ps(result.last_point_error->intensity_and_depth.data + 0, residual_a);
-        _mm_storel_pi((__m64 *)result.last_residual->data(), residual_a);
 
-        __m128 reference_b = _mm_load_ps((p_it + 0)->intensity_and_depth.data + 4);
-        __m128 residual_b = _mm_add_ps(_mm_mul_ps(current_weight_b, b), _mm_mul_ps(reference_weight_b, reference_b));
-        _mm_store_ps(result.last_point_error->intensity_and_depth.data + 4, residual_b);
+        // occlusion test
+        if(result.last_point_error->intensity_and_depth.z > -20.0f * depthStdDevZ((p_it + 0)->intensity_and_depth.z))
+        {
+          _mm_storel_pi((__m64 *)result.last_residual->data(), residual_a);
 
-        ++result.last_point_error;
-        ++result.last_residual;
+          __m128 reference_b = _mm_load_ps((p_it + 0)->intensity_and_depth.data + 4);
+          __m128 residual_b = _mm_add_ps(_mm_mul_ps(current_weight_b, b), _mm_mul_ps(reference_weight_b, reference_b));
+          _mm_store_ps(result.last_point_error->intensity_and_depth.data + 4, residual_b);
+
+          ++result.last_point_error;
+          ++result.last_residual;
+        }
+        else
+        {
+          nans_mask = 1;
+        }
       }
 
       if(Debug)
@@ -345,14 +362,23 @@ void computeResidualsSse(const PointIterator& first_point, const PointIterator& 
 
         __m128 residual_a = _mm_add_ps(_mm_mul_ps(current_weight_a, a), _mm_mul_ps(reference_weight_a, reference_a));
         _mm_store_ps(result.last_point_error->intensity_and_depth.data + 0, residual_a);
-        _mm_storel_pi((__m64 *)result.last_residual->data(), residual_a);
 
-        __m128 reference_b = _mm_load_ps((p_it + 1)->intensity_and_depth.data + 4);
-        __m128 residual_b = _mm_add_ps(_mm_mul_ps(current_weight_b, b), _mm_mul_ps(reference_weight_b, reference_b));
-        _mm_store_ps(result.last_point_error->intensity_and_depth.data + 4, residual_b);
+        // occlusion test
+        if(result.last_point_error->intensity_and_depth.z > -20.0f * depthStdDevZ((p_it + 1)->intensity_and_depth.z))
+        {
+          _mm_storel_pi((__m64 *)result.last_residual->data(), residual_a);
 
-        ++result.last_point_error;
-        ++result.last_residual;
+          __m128 reference_b = _mm_load_ps((p_it + 1)->intensity_and_depth.data + 4);
+          __m128 residual_b = _mm_add_ps(_mm_mul_ps(current_weight_b, b), _mm_mul_ps(reference_weight_b, reference_b));
+          _mm_store_ps(result.last_point_error->intensity_and_depth.data + 4, residual_b);
+
+          ++result.last_point_error;
+          ++result.last_residual;
+        }
+        else
+        {
+          nans_mask = 1;
+        }
       }
 
       if(Debug)
