@@ -47,7 +47,6 @@ public:
   typedef void MapChangedCallbackSignature(KeyframeGraph&);
   typedef boost::function<MapChangedCallbackSignature> MapChangedCallback;
 
-
   KeyframeGraph();
   virtual ~KeyframeGraph();
 
@@ -67,7 +66,7 @@ public:
 
   const g2o::SparseOptimizer& graph() const;
 
-  cv::Mat computeIntensityErrorImage(int edge_id) const;
+  cv::Mat computeIntensityErrorImage(int edge_id, bool use_measurement = true) const;
 
   void debugLoopClosureConstraint(int keyframe1, int keyframe2) const;
 

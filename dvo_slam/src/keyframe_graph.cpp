@@ -331,7 +331,7 @@ public:
     }
   }
 
-  cv::Mat computeIntensityErrorImage(int edge_id)
+  cv::Mat computeIntensityErrorImage(int edge_id, bool use_measurement)
   {
     cv::Mat result;
 
@@ -346,9 +346,12 @@ public:
     assert(kf1->id() == (*edge_it)->vertex(0)->id());
     assert(kf2->id() == (*edge_it)->vertex(1)->id());
 
+    Eigen::Affine3d transform;
+    transform = use_measurement ? toAffine(e->measurement()) : kf1->pose().inverse() * kf2->pose();
+
     dvo::DenseTracker tracker;
     tracker.configure(validation_tracker_cfg_);
-    result = tracker.computeIntensityErrorImage(*kf2->image(), *kf1->image(), toAffine(e->measurement()));
+    result = tracker.computeIntensityErrorImage(*kf2->image(), *kf1->image(), transform);
 
     std::map<int, LocalTracker::TrackingResult>::iterator r = constraint_tracking_results_.find(edge_id);
 
@@ -915,9 +918,9 @@ void KeyframeGraph::addMapChangedCallback(const KeyframeGraph::MapChangedCallbac
 }
 
 
-cv::Mat KeyframeGraph::computeIntensityErrorImage(int edge_id) const
+cv::Mat KeyframeGraph::computeIntensityErrorImage(int edge_id, bool use_measurement) const
 {
-  return impl_->computeIntensityErrorImage(edge_id);
+  return impl_->computeIntensityErrorImage(edge_id, use_measurement);
 }
 
 

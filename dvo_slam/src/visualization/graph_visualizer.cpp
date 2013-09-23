@@ -107,6 +107,8 @@ public:
     if(visualizer_.native(native_visualizer))
     {
       marker_server_ = reinterpret_cast<interactive_markers::InteractiveMarkerServer *>(native_visualizer);
+      menu_handler_.insert("error with measurement", boost::bind(&GraphVisualizerImpl::onEdgeErrorWithMeasurementClick, this, _1));
+      menu_handler_.insert("error with relative", boost::bind(&GraphVisualizerImpl::onEdgeErrorWithRelativeClick, this, _1));
       menu_handler_.insert("delete", boost::bind(&GraphVisualizerImpl::onEdgeDeleteClick, this, _1));
     }
     image_topic_ = it_.advertise("image", 1, true);
@@ -137,23 +139,6 @@ public:
 
   }
 
-  void onEdgeClick(g2o::OptimizableGraph::Edge* e, const interactive_markers::InteractiveMarkerServer::FeedbackConstPtr& feedback)
-  {
-    if(feedback->event_type != visualization_msgs::InteractiveMarkerFeedback::BUTTON_CLICK || graph_->graph().edges().find(e) == graph_->graph().edges().end()) return;
-
-    cv::Mat error = graph_->computeIntensityErrorImage(e->id()), error_uc8;
-
-    if(error.total() > 0)
-    {
-      std_msgs::Header h;
-
-      error = cv::abs(error * 255.0f);
-      error.convertTo(error_uc8, CV_8UC1);
-      cv_bridge::CvImage img(h, "mono8", error_uc8);
-      image_topic_.publish(img.toImageMsg());
-    }
-  }
-
   void onEdgeDeleteClick(const interactive_markers::MenuHandler::FeedbackConstPtr& feedback)
   {
     int edge_id;
@@ -167,6 +152,45 @@ public:
     if(edge_it == graph_->graph().edges().end()) return;
 
     g2o::HyperGraph::Edge* edge = *edge_it;
+  }
+
+  void onEdgeErrorWithMeasurementClick(const interactive_markers::MenuHandler::FeedbackConstPtr& feedback)
+  {
+    cv::Mat error = graph_->computeIntensityErrorImage(parseEdgeIdFromMarker(feedback->marker_name), true);
+
+    if(error.total() > 0)
+      publishErrorImage(error);
+  }
+
+  void onEdgeErrorWithRelativeClick(const interactive_markers::MenuHandler::FeedbackConstPtr& feedback)
+  {
+    cv::Mat error = graph_->computeIntensityErrorImage(parseEdgeIdFromMarker(feedback->marker_name), false);
+
+    if(error.total() > 0)
+      publishErrorImage(error);
+  }
+
+  void publishErrorImage(const cv::Mat& img)
+  {
+    std_msgs::Header h;
+
+    cv::Mat error, error_uc8;
+    error = cv::abs(img * 255.0f);
+    error.convertTo(error_uc8, CV_8UC1);
+
+    cv_bridge::CvImage ros_img(h, "mono8", error_uc8);
+    image_topic_.publish(ros_img.toImageMsg());
+  }
+
+  int parseEdgeIdFromMarker(const std::string& marker_name)
+  {
+    int edge_id;
+
+    std::istringstream iss(marker_name);
+    iss.ignore(edge_id_prefix_.size());
+    iss >> edge_id;
+
+    return edge_id;
   }
 
   geometry_msgs::Point toPoint(g2o::VertexSE3* v)
@@ -346,7 +370,7 @@ public:
             m.pose.position.z = p(2);
             m.controls.push_back(m_control);
 
-            marker_server_->insert(m, boost::bind(&GraphVisualizerImpl::onEdgeClick, this, (*it), _1));
+            marker_server_->insert(m, boost::bind(&GraphVisualizerImpl::onEdgeErrorWithMeasurementClick, this, _1));
             editable_edges_.insert(edge_id);
             previous_editable_edges.erase(edge_id);
           }
