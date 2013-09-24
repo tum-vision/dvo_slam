@@ -302,91 +302,9 @@ bool DenseTracker::match(dvo::core::PointSelection& reference, dvo::core::RgbdIm
         iteration_stats.PriorLogLikelihood = cfg.Mu * initial().log().squaredNorm();
 
         total_error = -ll;//iteration_stats.TDistributionLogLikelihood + iteration_stats.PriorLogLikelihood;
-        //itctx_.Error = total_error;
 
-        if(debug)
-        {
-          /*
-          cv::Mat debug_idx, debug_img, debug_img_scaled, weight_img, weight_img_scaled, rgb_error_img, rgb_error_img_scaled, depth_error_img, depth_error_img_scaled;
-
-          reference.getDebugIndex(itctx_.Level, debug_idx);
-
-          debug_img = cv::Mat::zeros(debug_idx.size(), CV_8UC3);
-          weight_img = cv::Mat::zeros(debug_idx.size(), CV_32FC1);
-          rgb_error_img = cv::Mat::zeros(debug_idx.size(), CV_32FC1);
-          depth_error_img = cv::Mat::zeros(debug_idx.size(), CV_32FC1);
-
-          WeightIterator w_it = weights.begin();
-          ResidualIterator r_it = residuals.begin();
-
-
-          ResidualIterator r_it = compute_residuals_result.first_residual;
-          ValidFlagIterator valid_it = compute_residuals_result.first_valid_flag;
-          uint8_t *point_it = debug_idx.ptr<uint8_t>();
-          float *weight_img_it = weight_img.ptr<float>();
-          float *rgb_error_img_it = rgb_error_img.ptr<float>();
-          float *depth_error_img_it = depth_error_img.ptr<float>();
-          cv::Vec3b* img_it = debug_img.ptr<cv::Vec3b>();
-          cv::Vec3b* img_end = debug_img.ptr<cv::Vec3b>() + debug_img.total();
-
-          for(; img_it != img_end; ++img_it, ++weight_img_it, ++point_it, ++rgb_error_img_it, ++depth_error_img_it)
-          {
-            if(*point_it == 1)
-            {
-              img_it->val[2] = 255;
-
-              if(*valid_it == 1)
-              {
-                img_it->val[1] = 255;
-
-                *rgb_error_img_it = std::abs(r_it->coeff(0));
-                *depth_error_img_it = std::abs(r_it->coeff(1));
-
-                if(itctx_.IsFirstIteration())
-                {
-                  rgb_max = std::max(rgb_max, *rgb_error_img_it);
-                  depth_max = std::max(depth_max, *depth_error_img_it);
-                }
-                *weight_img_it = *w_it;
-                err_img_it->val[2] = (*r_it)(0);
-                err_img_it->val[1] = (*r_it)(1);
-                *erri_img_it = (*r_it)(0);
-                *errd_img_it = (*r_it)(1);
-                ++w_it;
-                ++r_it;
-              }
-
-              ++valid_it;
-            }
-          }
-          cv::Mat left(video_frame, cv::Rect(0, 0, s.width, s.height));
-          cv::Mat right(video_frame, cv::Rect(s.width, 0, s.width, s.height));
-
-          cv::resize(debug_img, debug_img_scaled, s);
-          cv::resize(weight_img, weight_img_scaled, s);
-
-          cv::resize(rgb_error_img / rgb_max, left, left.size());
-          cv::resize(depth_error_img, right, right.size());
-
-          std::stringstream ss;
-          ss << "iteration: " << std::setw(2) << itctx_.Iteration;// << " log likelihood: " << std::setiosflags(std::ios::fixed) << std::setw(7) << std::setprecision(0) << ll;
-
-          cv::putText(video_frame, ss.str(), cv::Point(int(0.05*s.width), int(0.95*s.height)), CV_FONT_HERSHEY_DUPLEX, 0.7, cv::Scalar(1.0), 1, 1, false);
-
-          video_frame.convertTo(video_frame_u8, CV_8UC1, 255.0);
-
-
-          for(int i = 0; i < 10; ++i)
-            vw << video_frame_u8;
-          */
-          //cv::imshow("points", debug_img_scaled);
-          //cv::imshow("weights", weight_img_scaled);
-          //cv::imshow("error", video_frame);
-          //cv::waitKey(100);
-        }
-
-          itctx_.LastError = itctx_.Error;
-          itctx_.Error = total_error;
+        itctx_.LastError = itctx_.Error;
+        itctx_.Error = total_error;
 
 //      sw_error[itctx_.Level].stopAndPrint();
 
