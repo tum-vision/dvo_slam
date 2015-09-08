@@ -178,7 +178,7 @@ void CameraDenseTracker::handlePose(const geometry_msgs::PoseWithCovarianceStamp
   tf::Transform tmp;
 
   tf::poseMsgToTF(pose->pose.pose, tmp);
-  tf::TransformTFToEigen(tmp, latest_absolute_transform_);
+  tf::transformTFToEigen(tmp, latest_absolute_transform_);
 
   if(!use_dense_tracking_estimate_)
     publishPose(pose->header, latest_absolute_transform_, "baselink_estimate");
@@ -317,7 +317,7 @@ void CameraDenseTracker::publishTransform(const std_msgs::Header& header, const 
   tf_transform.child_frame_id_ = frame;
   tf_transform.stamp_ = header.stamp;
 
-  tf::TransformEigenToTF(transform, tf_transform);
+  tf::transformEigenToTF(transform, tf_transform);
 
   tb.sendTransform(tf_transform);
 }
@@ -336,7 +336,7 @@ void CameraDenseTracker::publishPose(const std_msgs::Header& header, const Eigen
 
   tf::Transform tmp;
 
-  tf::TransformEigenToTF(transform, tmp);
+  tf::transformEigenToTF(transform, tmp);
   tf::poseTFToMsg(tmp, msg->pose.pose);
 
   msg->pose.covariance.assign(0.0);

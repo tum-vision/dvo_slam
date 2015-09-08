@@ -25,7 +25,7 @@
 #include <dvo/core/surface_pyramid.h>
 
 #include <dvo/visualization/camera_trajectory_visualizer.h>
-#include <dvo/visualization/pcl_camera_trajectory_visualizer.h>
+//#include <dvo/visualization/pcl_camera_trajectory_visualizer.h>
 #include <dvo_ros/visualization/ros_camera_trajectory_visualizer.h>
 
 #include <dvo/dense_tracking.h>
@@ -124,7 +124,7 @@ public:
 
   void createReferenceCamera(dvo::visualization::CameraTrajectoryVisualizerInterface* visualizer, const dvo::core::RgbdImage& img, const Eigen::Affine3d& pose);
 
-  void renderWhileSwitchAndNotTerminated(dvo::visualization::CameraTrajectoryVisualizerInterface* visualizer, const dvo::visualization::Switch& s);
+  void renderWhileSwitchAndNotTerminated(dvo::visualization::CameraTrajectoryVisualizerInterface* visualizer/*, const dvo::visualization::Switch& s*/);
 
   void processInput(dvo::visualization::CameraTrajectoryVisualizerInterface* visualizer);
 private:
@@ -135,7 +135,7 @@ private:
   dvo_benchmark::FileReader<dvo_benchmark::Groundtruth> *groundtruth_reader_;
   dvo_benchmark::FileReader<dvo_benchmark::RgbdPair> *rgbdpair_reader_;
 
-  dvo::visualization::Switch dump_camera_pose_, load_camera_pose_;
+//  dvo::visualization::Switch dump_camera_pose_, load_camera_pose_;
 };
 
 bool BenchmarkNode::Config::EstimateRequired()
@@ -154,9 +154,9 @@ BenchmarkNode::BenchmarkNode(ros::NodeHandle& nh, ros::NodeHandle& nh_private) :
     nh_private_(nh_private),
     trajectory_out_(0),
     groundtruth_reader_(0),
-    rgbdpair_reader_(0),
-    dump_camera_pose_(false),
-    load_camera_pose_(false)
+    rgbdpair_reader_(0)
+//    dump_camera_pose_(false),
+//    load_camera_pose_(false)
 {
 }
 
@@ -243,11 +243,11 @@ bool BenchmarkNode::configure()
   return true;
 }
 
-void BenchmarkNode::renderWhileSwitchAndNotTerminated(dvo::visualization::CameraTrajectoryVisualizerInterface* visualizer, const dvo::visualization::Switch& s)
+void BenchmarkNode::renderWhileSwitchAndNotTerminated(dvo::visualization::CameraTrajectoryVisualizerInterface* visualizer/*, const dvo::visualization::Switch& s*/)
 {
   if(cfg_.VisualizationRequired())
   {
-    while(s.value() && ros::ok())
+    while(/*s.value() && */ros::ok())
     {
       ros::spinOnce();
       //processInput(visualizer);
@@ -269,6 +269,7 @@ void BenchmarkNode::processInput(dvo::visualization::CameraTrajectoryVisualizerI
 {
   if(cfg_.VisualizationRequired())
   {
+/*
     if(dump_camera_pose_.value())
     {
       if(!cfg_.CameraFile.empty())
@@ -289,6 +290,7 @@ void BenchmarkNode::processInput(dvo::visualization::CameraTrajectoryVisualizerI
         << cams[0].window_size[0] << "," << cams[0].window_size[1] << "/"
         << cams[0].window_pos[0] << "," << cams[0].window_pos[1];
         camera_pose_file.close();
+
       }
       else
       {
@@ -326,6 +328,7 @@ void BenchmarkNode::processInput(dvo::visualization::CameraTrajectoryVisualizerI
 
       load_camera_pose_.toggle();
     }
+ */
   }
 }
 
@@ -352,7 +355,7 @@ void BenchmarkNode::createReferenceCamera(dvo::visualization::CameraTrajectoryVi
 void BenchmarkNode::run()
 {
   // setup visualizer
-  dvo::visualization::Switch pause_switch(false), dummy_switch(true);
+//  dvo::visualization::Switch pause_switch(false), dummy_switch(true);
   dvo::visualization::CameraTrajectoryVisualizerInterface* visualizer;
   dvo_slam::visualization::GraphVisualizer* graph_visualizer;
 
@@ -452,8 +455,8 @@ void BenchmarkNode::run()
     if(!current) continue;
 
     // pause in the beginning
-    renderWhileSwitchAndNotTerminated(visualizer, pause_switch);
-    processInput(visualizer);
+//    renderWhileSwitchAndNotTerminated(visualizer, pause_switch);
+//    processInput(visualizer);
 
     if(cfg_.ShowGroundtruth)
     {
@@ -536,7 +539,7 @@ void BenchmarkNode::run()
   // keep visualization alive
   if(cfg_.KeepAlive)
   {
-    renderWhileSwitchAndNotTerminated(visualizer, dummy_switch);
+    renderWhileSwitchAndNotTerminated(visualizer/*, dummy_switch*/);
   }
 
   dvo_slam::serialization::FileSerializer<dvo_slam::serialization::TrajectorySerializer> serializer(optimized_trajectory_file);

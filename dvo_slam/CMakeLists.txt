@@ -1,34 +1,53 @@
-cmake_minimum_required(VERSION 2.4.6)
-include($ENV{ROS_ROOT}/core/rosbuild/rosbuild.cmake)
+cmake_minimum_required(VERSION 2.8.3)
 
-# Set the build type.  Options are:
-#  Coverage       : w/ debug symbols, w/o optimization, w/ code-coverage
-#  Debug          : w/ debug symbols, w/o optimization
-#  Release        : w/o debug symbols, w/ optimization
-#  RelWithDebInfo : w/ debug symbols, w/ optimization
-#  MinSizeRel     : w/o debug symbols, w/ optimization, stripped binaries
-#set(ROS_BUILD_TYPE RelWithDebInfo)
+project(dvo_slam)
 
-rosbuild_init()
+LIST(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake_modules")
 
-#set the default path for built executables to the "bin" directory
-set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
-#set the default path for built libraries to the "lib" directory
-set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
+find_package(catkin REQUIRED COMPONENTS roscpp dynamic_reconfigure dvo_core dvo_ros sensor_msgs image_transport message_filters cv_bridge visualization_msgs interactive_markers)
+find_package(cmake_modules REQUIRED)
+find_package(Eigen3 REQUIRED)
+find_package(G2O REQUIRED)
+find_package(SuiteSparse REQUIRED)
+#find_package(sophus REQUIRED)
+#find_package(Boost REQUIRED thread)
+find_package(OpenCV 2.4.8 REQUIRED)
+find_package(TBB REQUIRED)
+
+#LIST(APPEND CMAKE_CXX_FLAGS "-std=c++11")
+
+IF(G2O_FOUND)
+message(STATUS "found g2o ${G2O_FOUND}")
+ELSE()
+message(ERROR "g2o missing")
+ENDIF()
 
 # dynamic reconfigure
-rosbuild_find_ros_package(dynamic_reconfigure)
-include(${dynamic_reconfigure_PACKAGE_PATH}/cmake/cfgbuild.cmake)
-gencfg()
+generate_dynamic_reconfigure_options(cfg/GraphVisualizer.cfg cfg/KeyframeSlam.cfg)
+
+catkin_package(
+  INCLUDE_DIRS include
+  LIBRARIES dvo_slam
+  DEPENDS OpenCV
+)
+
+include_directories(
+  "include"
+  ${dvo_slam_INCLUDE_DIRS}
+  ${catkin_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIRS}
+  ${G2O_INCLUDE_DIR}
+  ${CSPARSE_INCLUDE_DIR}
+)
 
 # messages
-rosbuild_genmsg()
+#rosbuild_genmsg()
 
 # VTK library
-find_package(VTK REQUIRED)
-include_directories(${VTK_INCLUDE_DIRS})
+#find_package(VTK REQUIRED)
+#include_directories(${VTK_INCLUDE_DIRS})
 
-rosbuild_add_library(${PROJECT_NAME} 
+add_library(${PROJECT_NAME} 
   src/keyframe_tracker.cpp
   src/keyframe_graph.cpp
   src/keyframe_constraint_search.cpp
@@ -53,18 +72,21 @@ rosbuild_add_library(${PROJECT_NAME}
 )
 
 target_link_libraries(${PROJECT_NAME}
-  g2o_core
-  g2o_solver_dense
-  g2o_solver_csparse
-  g2o_csparse_extension
-  csparse
-  g2o_types_slam3d
+  ${G2O_CORE_LIBRARY}
+  ${G2O_SOLVER_DENSE}
+  ${G2O_SOLVER_CSPARSE}
+  ${G2O_SOLVER_CSPARSE_EXTENSION}
+  ${CSPARSE_LIBRARY}
+  ${G2O_TYPES_SLAM3D}
+  ${catkin_LIBRARIES}
 )
 
-rosbuild_add_executable(camera_keyframe_tracker
-  src/camera_keyframe_tracker_node.cpp
-)
+#add_executable(camera_keyframe_tracker
+#  src/camera_keyframe_tracker_node.cpp
+#)
 
-target_link_libraries(camera_keyframe_tracker
-  ${PROJECT_NAME}
-)
+#target_link_libraries(camera_keyframe_tracker
+#  ${PROJECT_NAME}
+#)
+
+add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_gencfg)

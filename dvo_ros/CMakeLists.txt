@@ -1,47 +1,47 @@
-cmake_minimum_required(VERSION 2.4.6)
-include($ENV{ROS_ROOT}/core/rosbuild/rosbuild.cmake)
+cmake_minimum_required(VERSION 2.8.3)
 
-# Set the build type.  Options are:
-#  Coverage       : w/ debug symbols, w/o optimization, w/ code-coverage
-#  Debug          : w/ debug symbols, w/o optimization
-#  Release        : w/o debug symbols, w/ optimization
-#  RelWithDebInfo : w/ debug symbols, w/ optimization
-#  MinSizeRel     : w/o debug symbols, w/ optimization, stripped binaries
-#set(ROS_BUILD_TYPE RelWithDebInfo)
+project(dvo_ros)
 
-rosbuild_init()
-
-#set the default path for built executables to the "bin" directory
-set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
-#set the default path for built libraries to the "lib" directory
-set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
-
-
-#common commands for building c++ executables and libraries
-#rosbuild_add_library(${PROJECT_NAME} src/example.cpp)
-#target_link_libraries(${PROJECT_NAME} another_library)
-#rosbuild_add_boost_directories()
-#rosbuild_link_boost(${PROJECT_NAME} thread)
-#rosbuild_add_executable(example examples/example.cpp)
-#target_link_libraries(example ${PROJECT_NAME})
-
-# Eigen3 library
-find_package(Eigen REQUIRED)
-include_directories(${Eigen_INCLUDE_DIRS})
+find_package(catkin REQUIRED COMPONENTS roscpp tf tf_conversions eigen_conversions dynamic_reconfigure dvo_core sensor_msgs image_transport message_filters cv_bridge visualization_msgs interactive_markers pcl_ros)
+find_package(cmake_modules REQUIRED)
+find_package(PCL REQUIRED COMPONENTS common)
+find_package(Eigen3 REQUIRED)
+#find_package(sophus REQUIRED)
+#find_package(Boost REQUIRED thread)
+find_package(OpenCV 2.4.8 REQUIRED)
+#find_package(TBB REQUIRED)
 
 # dynamic reconfigure
-rosbuild_find_ros_package(dynamic_reconfigure)
-include(${dynamic_reconfigure_PACKAGE_PATH}/cmake/cfgbuild.cmake)
-gencfg()
+generate_dynamic_reconfigure_options(cfg/CameraDenseTracker.cfg)
 
-rosbuild_add_library(${PROJECT_NAME} 
+catkin_package(
+  INCLUDE_DIRS include
+  LIBRARIES dvo_ros
+  DEPENDS OpenCV PCL
+)
+
+include_directories(
+  "include"
+  ${dvo_ros_INCLUDE_DIRS}
+  ${catkin_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIRS}
+  ${Boost_INCLUDE_DIRS}
+  ${PCL_INCLUDE_DIRS}
+)
+
+
+add_library(${PROJECT_NAME} 
     src/camera_base.cpp
     src/camera_dense_tracking.cpp
     
     src/visualization/ros_camera_trajectory_visualizer.cpp
 )
 
-rosbuild_add_library(camera_tracker_nodelet
+target_link_libraries(${PROJECT_NAME}
+  ${catkin_LIBRARIES}
+)
+
+add_library(camera_tracker_nodelet
     src/camera_tracker_nodelet.cpp
 )
 
@@ -49,10 +49,14 @@ target_link_libraries(camera_tracker_nodelet
     ${PROJECT_NAME}
 )
 
-rosbuild_add_executable(camera_tracker
+add_dependencies(camera_tracker_nodelet ${PROJECT_NAME}_gencfg)
+
+add_executable(camera_tracker
      src/camera_tracker_node.cpp
 )
 
 target_link_libraries(camera_tracker
     ${PROJECT_NAME}
 )
+
+add_dependencies(camera_tracker ${PROJECT_NAME}_gencfg)

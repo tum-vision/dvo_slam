@@ -24,7 +24,7 @@
 #include <iostream>
 
 #include <dvo_slam/serialization/map_serializer_interface.h>
-#include <dvo_slam/PoseStampedArray.h>
+//#include <dvo_slam/PoseStampedArray.h>
 
 namespace dvo_slam
 {
@@ -77,7 +77,7 @@ public:
 private:
   std::ostream& stream_;
 };
-
+/*
 class MessageSerializer : public MapSerializerInterface
 {
 public:
@@ -88,7 +88,7 @@ public:
 private:
   dvo_slam::PoseStampedArray& msg_;
 };
-
+*/
 } /* namespace serialization */
 } /* namespace dvo_slam */
 #endif /* MAP_SERIALIZER_H_ */

@@ -54,7 +54,7 @@ static void tryGetTransform(Eigen::Affine3d& result, tf::TransformListener& tl, 
 
   tryGetTransform(tmp, tl, target_frame, source_frame, seconds_to_wait);
 
-  tf::TransformTFToEigen(tmp, result);
+  tf::transformTFToEigen(tmp, result);
 }
 
 } /* namespace util */ } /* namespace dvo_ros */

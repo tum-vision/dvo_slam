@@ -33,7 +33,7 @@
 #include <dvo_slam/config.h>
 #include <dvo_slam/camera_keyframe_tracking.h>
 
-#include <dvo_slam/PoseStampedArray.h>
+//#include <dvo_slam/PoseStampedArray.h>
 #include <dvo_slam/serialization/map_serializer.h>
 
 #include <dvo_slam/visualization/graph_visualizer.h>
@@ -61,7 +61,7 @@ CameraKeyframeTracker::CameraKeyframeTracker(ros::NodeHandle& nh, ros::NodeHandl
   ROS_INFO("CameraDenseTracker::ctor(...)");
 
   pose_publisher = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("pose", 1);
-  graph_publisher = nh.advertise<dvo_slam::PoseStampedArray>("graph", 1);
+  //graph_publisher = nh.advertise<dvo_slam::PoseStampedArray>("graph", 1);
 
   TrackerReconfigureServer::CallbackType tracker_reconfigure_server_callback = boost::bind(&CameraKeyframeTracker::handleTrackerConfig, this, _1, _2);
   tracker_reconfigure_server_.setCallback(tracker_reconfigure_server_callback);
@@ -182,11 +182,13 @@ void CameraKeyframeTracker::handleSlamConfig(dvo_slam::KeyframeSlamConfig& confi
 
 void CameraKeyframeTracker::onMapChanged(dvo_slam::KeyframeGraph& map)
 {
+/*
   dvo_slam::PoseStampedArray msg;
   dvo_slam::serialization::MessageSerializer serializer(msg);
   serializer.serialize(map);
 
   graph_publisher.publish(msg);
+*/
 }
 
 void CameraKeyframeTracker::handleImages(
@@ -298,7 +300,7 @@ void CameraKeyframeTracker::publishTransform(const std_msgs::Header& header, con
   tf_transform.child_frame_id_ = frame;
   tf_transform.stamp_ = header.stamp;
 
-  tf::TransformEigenToTF(transform, tf_transform);
+  tf::transformEigenToTF(transform, tf_transform);
 
   tb.sendTransform(tf_transform);
 
