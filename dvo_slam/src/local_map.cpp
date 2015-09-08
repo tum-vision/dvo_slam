@@ -95,7 +95,10 @@ struct LocalMapImpl
     frame_vertex->setId(max_vertex_id_++);
     frame_vertex->setUserData(new Timestamped(timestamp));
 
-    graph_.addVertex(frame_vertex);
+    if(!graph_.addVertex(frame_vertex))
+    {
+      throw std::runtime_error("failed to add vertex to g2o graph!");
+    }
 
     return frame_vertex;
   }
