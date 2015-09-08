@@ -394,7 +394,7 @@ public:
 
       visualization_msgs::InteractiveMarker marker;
 
-      marker.header.frame_id = "/world";
+      marker.header.frame_id = "world";
       marker.name = std::string("constraints");
       marker.controls.push_back(control);
 

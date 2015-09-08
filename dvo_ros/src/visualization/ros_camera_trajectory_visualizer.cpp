@@ -191,7 +191,7 @@ private:
     createCameraMarker(control);
 
     marker.name = name_;
-    marker.header.frame_id = "/world";
+    marker.header.frame_id = "world";
     marker.controls.push_back(control);
   }
 
@@ -327,7 +327,7 @@ private:
 
     m.points.push_back(p);
 
-    //parent.markers.push_back(m);
+    parent.markers.push_back(m);
     parent.markers.push_back(mbox);
   }
 
@@ -336,9 +336,9 @@ private:
     marker.controls[0].markers[0].color.r = color().r;
     marker.controls[0].markers[0].color.g = color().g;
     marker.controls[0].markers[0].color.b = color().b;
-    //marker.controls[0].markers[1].color.r = color().r;
-    //marker.controls[0].markers[1].color.g = color().g;
-    //marker.controls[0].markers[1].color.b = color().b;
+    marker.controls[0].markers[1].color.r = color().r;
+    marker.controls[0].markers[1].color.g = color().g;
+    marker.controls[0].markers[1].color.b = color().b;
   }
 };
 
@@ -387,7 +387,7 @@ private:
     control.always_visible = true;
     control.markers.push_back(m);
 
-    marker.header.frame_id = "/world";
+    marker.header.frame_id = "world";
     marker.name = name + std::string("_trajectory");
     marker.controls.push_back(control);
   }
@@ -474,7 +474,7 @@ private:
     if(point_cloud_topic_.getNumSubscribers() == 0) return;
 
     dvo::visualization::AsyncPointCloudBuilder::PointCloud::Ptr cloud = point_cloud_aggregator_.build();
-    cloud->header.frame_id = "/world";
+    cloud->header.frame_id = "world";
     cloud->is_dense = true;
     point_cloud_topic_.publish(cloud);
   }
