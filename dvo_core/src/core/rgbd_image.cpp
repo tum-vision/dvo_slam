@@ -290,6 +290,8 @@ void RgbdCameraPyramid::build(size_t levels)
 
     dvo::core::IntrinsicMatrix intrinsics(previous->intrinsics());
     intrinsics.scale(0.5f);
+    intrinsics.data(0,2) -= 0.25f;
+    intrinsics.data(1,2) -= 0.25f;
 
     levels_.push_back(boost::make_shared<RgbdCamera>(previous->width() / 2, previous->height() / 2, intrinsics));
   }
