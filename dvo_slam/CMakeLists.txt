@@ -14,7 +14,7 @@ find_package(SuiteSparse REQUIRED)
 find_package(OpenCV 2.4.8 REQUIRED)
 find_package(TBB REQUIRED)
 
-#LIST(APPEND CMAKE_CXX_FLAGS "-std=c++11")
+LIST(APPEND CMAKE_CXX_FLAGS "-std=c++11")
 
 IF(G2O_FOUND)
 message(STATUS "found g2o ${G2O_FOUND}")
