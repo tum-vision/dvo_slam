@@ -4,11 +4,10 @@ project(dvo_slam)
 
 LIST(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake_modules")
 
-find_package(catkin REQUIRED COMPONENTS roscpp dynamic_reconfigure dvo_core dvo_ros sensor_msgs image_transport message_filters cv_bridge visualization_msgs interactive_markers)
+find_package(catkin REQUIRED COMPONENTS roscpp dynamic_reconfigure dvo_core dvo_ros sensor_msgs image_transport message_filters cv_bridge visualization_msgs interactive_markers message_generation geometry_msgs)
 find_package(cmake_modules REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(G2O REQUIRED)
-find_package(SuiteSparse REQUIRED)
 #find_package(sophus REQUIRED)
 #find_package(Boost REQUIRED thread)
 find_package(OpenCV 2.4.8 REQUIRED)
@@ -16,19 +15,30 @@ find_package(TBB REQUIRED)
 
 LIST(APPEND CMAKE_CXX_FLAGS "-std=c++11")
 
-IF(G2O_FOUND)
-message(STATUS "found g2o ${G2O_FOUND}")
-ELSE()
-message(ERROR "g2o missing")
-ENDIF()
+if(G2O_FOUND)
+  message(STATUS "Found G2O")
+else()
+  message(ERROR "G2O missing")
+endif()
 
 # dynamic reconfigure
 generate_dynamic_reconfigure_options(cfg/GraphVisualizer.cfg cfg/KeyframeSlam.cfg)
+
+# messages
+add_message_files(
+  FILES
+  PoseStampedArray.msg
+)
+generate_messages(
+  DEPENDENCIES
+  geometry_msgs
+)
 
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES dvo_slam
   DEPENDS OpenCV
+  CATKIN_DEPENDS message_runtime
 )
 
 include_directories(
@@ -37,15 +47,7 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIRS}
   ${G2O_INCLUDE_DIR}
-  ${CSPARSE_INCLUDE_DIR}
 )
-
-# messages
-#rosbuild_genmsg()
-
-# VTK library
-#find_package(VTK REQUIRED)
-#include_directories(${VTK_INCLUDE_DIRS})
 
 add_library(${PROJECT_NAME} 
   src/keyframe_tracker.cpp
@@ -74,9 +76,7 @@ add_library(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
   ${G2O_CORE_LIBRARY}
   ${G2O_SOLVER_DENSE}
-  ${G2O_SOLVER_CSPARSE}
-  ${G2O_SOLVER_CSPARSE_EXTENSION}
-  ${CSPARSE_LIBRARY}
+  ${G2O_SOLVER_EIGEN}
   ${G2O_TYPES_SLAM3D}
   ${catkin_LIBRARIES}
 )
