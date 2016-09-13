@@ -16,9 +16,11 @@
 
   <build_depend>libpcl-all-dev</build_depend>
   <build_depend>sophus</build_depend>
-  <build_depend>libopencv-dev</build_depend>
+  <!--build_depend>libopencv-dev</build_depend-->
+  <build_depend>cv_bridge</build_depend>
   <build_depend>tbb</build_depend>
   
   <run_depend>libpcl-all</run_depend>
-  <run_depend>libopencv-dev</run_depend>
+  <run_depend>cv_bridge</run_depend>
+  <!--run_depend>libopencv-dev</run_depend-->
 </package>

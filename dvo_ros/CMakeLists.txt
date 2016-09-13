@@ -8,16 +8,16 @@ find_package(PCL REQUIRED COMPONENTS common)
 find_package(Eigen3 REQUIRED)
 #find_package(sophus REQUIRED)
 #find_package(Boost REQUIRED thread)
-find_package(OpenCV 2.4.8 REQUIRED)
+#find_package(OpenCV 3 REQUIRED)
 #find_package(TBB REQUIRED)
-
+ 
 # dynamic reconfigure
 generate_dynamic_reconfigure_options(cfg/CameraDenseTracker.cfg)
 
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES dvo_ros
-  DEPENDS OpenCV PCL
+  DEPENDS PCL
 )
 
 include_directories(
@@ -29,6 +29,7 @@ include_directories(
   ${PCL_INCLUDE_DIRS}
 )
 
+message(STATUS "hello my dear ${catkin_LIBRARIES}")
 
 add_library(${PROJECT_NAME} 
     src/camera_base.cpp

@@ -2,13 +2,13 @@ cmake_minimum_required(VERSION 2.8.3)
 
 project(dvo_core)
 
-find_package(catkin REQUIRED)
+find_package(catkin REQUIRED COMPONENTS cv_bridge)
 find_package(cmake_modules REQUIRED)
 find_package(PCL REQUIRED COMPONENTS common filters)
 find_package(Eigen3 REQUIRED)
 find_package(sophus REQUIRED)
 find_package(Boost REQUIRED COMPONENTS thread)
-find_package(OpenCV 2.4.8 REQUIRED)
+#find_package(OpenCV 3 REQUIRED)
 find_package(TBB REQUIRED)
 
 catkin_package(
@@ -52,6 +52,7 @@ target_link_libraries(dvo_core
     tbb
     boost_thread 
     ${PCL_LIBRARIES}
+    ${catkin_LIBRARIES}
 )
 
 add_library(dvo_visualization
