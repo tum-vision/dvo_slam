@@ -125,13 +125,13 @@ class KeyframeGraphImpl
 {
 public:
   friend class ::dvo_slam::KeyframeGraph;
-
+  static const int FirstOdometryId = 1 << 30;
   KeyframeGraphImpl() :
     optimization_thread_shutdown_(false),
     optimization_thread_(boost::bind(&KeyframeGraphImpl::execOptimization, this)),
     next_keyframe_id_(1),
-    next_odometry_vertex_id_(-1),
-    next_odometry_edge_id_(-1),
+    next_odometry_vertex_id_(FirstOdometryId),
+    next_odometry_edge_id_(FirstOdometryId),
     validator_pool_(boost::bind(&KeyframeGraphImpl::createConstraintProposalValidator, this))
   {
     // g2o setup
@@ -319,7 +319,7 @@ public:
           candidate = (*edge_it)->vertex(0);
         }
 
-        if(candidate != 0 && candidate->id() < 0)
+        if(candidate != 0 && candidate->id() >= FirstOdometryId)
         {
           inter_keyframe_vertices.insert(candidate);
         }
@@ -637,7 +637,7 @@ private:
 
   bool isOdometryConstraint(g2o::EdgeSE3* e)
   {
-    return std::abs(e->vertex(0)->id() - e->vertex(1)->id());
+    return std::abs(e->vertex(0)->id() - e->vertex(1)->id()) == 1;
   }
 
   int removeOutlierConstraints(double weight_threshold, int n_max = -1)
@@ -773,13 +773,13 @@ private:
     g2o::OptimizableGraph::VertexIDMap vertices = g.vertices();
     for(g2o::OptimizableGraph::VertexIDMap::iterator v_it = vertices.begin(); v_it != vertices.end(); ++v_it)
     {
-      g.changeId(v_it->second, next_odometry_vertex_id_ - (v_it->second->id() - 1));
+      g.changeId(v_it->second, next_odometry_vertex_id_ + (v_it->second->id() - 1));
     }
 
     for(g2o::OptimizableGraph::EdgeSet::iterator e_it = g.edges().begin(); e_it != g.edges().end(); ++e_it)
     {
       g2o::EdgeSE3* e = (g2o::EdgeSE3*) (*e_it);
-      e->setId(next_odometry_edge_id_--);
+      e->setId(next_odometry_edge_id_++);
       e->setLevel(cfg_.OptimizationUseDenseGraph ? 0 : 2);
     }
 
@@ -828,7 +828,7 @@ private:
     keyframes_.push_back(keyframe);
 
     // increment ids
-    next_odometry_vertex_id_ -= max_id - 1;
+    next_odometry_vertex_id_ += max_id - 1;
     next_keyframe_id_ += 1;
 
     return keyframe;
