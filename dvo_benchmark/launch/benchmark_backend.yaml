@@ -11,7 +11,7 @@ graph_opt_iterations: 50
 graph_opt_min_distance: 0
 graph_opt_remove_outliers: true
 graph_opt_outlier_weight_threshold: 0.1
-graph_opt_final: false
+graph_opt_final: true
 graph_opt_final_dense_graph: true
 graph_opt_final_remove_outliers: true
 graph_opt_final_outlier_weight_threshold: 0.1

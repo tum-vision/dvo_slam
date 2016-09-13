@@ -532,6 +532,10 @@ void BenchmarkNode::run()
   //std::cin >> tmp;
 
   sw_postprocess.start();
+  if(dynreconfg_slam_cfg.graph_opt_final)
+  {
+    keyframe_tracker.finish();
+  }
   sw_postprocess.stop();
 
   sw_online.print();sw_postprocess.print();
